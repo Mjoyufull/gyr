@@ -1,8 +1,8 @@
-// Selection, copying, and tagging functionality
+//! Clipboard selection, provider lifecycle, deletion, and tagging.
 
 use super::CclipItem;
 use eyre::{Result, eyre};
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Read};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -51,46 +51,19 @@ impl CclipItem {
             .take()
             .ok_or_else(|| eyre!("failed to capture cclip stdout"))?;
 
-        let mut wl_copy_child = Command::new("wl-copy")
-            .args(["--type", &self.mime_type])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-
-        let wl_copy_stdin = wl_copy_child
-            .stdin
-            .take()
-            .ok_or_else(|| eyre!("failed to open wl-copy stdin"))?;
-
-        let pipe_handle = std::thread::spawn(move || {
-            let mut source = cclip_stdout;
-            let mut sink = wl_copy_stdin;
-            io::copy(&mut source, &mut sink)
-        });
-
-        let cclip_output = cclip_child.wait_with_output()?;
-        let copied_bytes = pipe_handle
-            .join()
-            .map_err(|_| eyre!("clipboard pipe thread panicked"))??;
-        wait_for_clipboard_provider_start(
-            &mut wl_copy_child,
-            "wl-copy",
+        let copy_result = copy_reader_with_wl_copy(
+            cclip_stdout,
+            &self.mime_type,
             CLIPBOARD_PROVIDER_STARTUP_TIMEOUT,
-        )?;
-
+        );
+        let cclip_output = cclip_child.wait_with_output()?;
         if !cclip_output.status.success() {
             return Err(eyre!(
                 "cclip get failed: {}",
                 String::from_utf8_lossy(&cclip_output.stderr)
             ));
         }
-
-        if copied_bytes == 0 {
-            return Err(eyre!("cclip get returned no data"));
-        }
-
-        Ok(())
+        copy_result
     }
 
     /// Copy this item back to the clipboard.
@@ -114,15 +87,17 @@ impl CclipItem {
         if std::env::var("WAYLAND_DISPLAY").is_err() {
             return Err(eyre!("cclip mode requires a Wayland session"));
         }
-        if !command_is_available("wl-copy") {
-            return Err(eyre!("copying rendered content requires wl-copy"));
+        if command_is_available("wl-copy")
+            && copy_reader_with_wl_copy(
+                Cursor::new(rendered_content.clone()),
+                "text/plain;charset=utf-8",
+                CLIPBOARD_PROVIDER_STARTUP_TIMEOUT,
+            )
+            .is_ok()
+        {
+            return Ok(());
         }
-
-        copy_bytes_with_wl_copy(
-            rendered_content,
-            "text/plain;charset=utf-8",
-            CLIPBOARD_PROVIDER_STARTUP_TIMEOUT,
-        )
+        copy_bytes_with_cclip(rendered_content, CLIPBOARD_PROVIDER_STARTUP_TIMEOUT)
     }
 }
 
@@ -132,38 +107,55 @@ fn rendered_clipboard_content(mime_type: &str, bytes: Vec<u8>) -> Result<Option<
     }
 
     let html =
-        String::from_utf8(bytes).map_err(|_| eyre!("HTML clipboard content is not valid UTF-8"))?;
+        super::html::decode_text_bytes(mime_type, &bytes).map_err(|message| eyre!(message))?;
     Ok(Some(
         super::html::text_for_display(mime_type, &html).into_bytes(),
     ))
 }
 
-fn copy_bytes_with_wl_copy(bytes: Vec<u8>, mime_type: &str, timeout: Duration) -> Result<()> {
-    let mut child = Command::new("wl-copy")
+fn copy_reader_with_wl_copy(
+    source: impl Read + Send + 'static,
+    mime_type: &str,
+    timeout: Duration,
+) -> Result<()> {
+    let child = Command::new("wl-copy")
         .args(["--type", mime_type])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
+    pipe_to_clipboard_provider(source, child, "wl-copy", timeout)
+}
+
+fn copy_bytes_with_cclip(bytes: Vec<u8>, timeout: Duration) -> Result<()> {
+    let child = Command::new("cclip")
+        .args(["copy", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    pipe_to_clipboard_provider(Cursor::new(bytes), child, "cclip copy -", timeout)
+}
+
+fn pipe_to_clipboard_provider(
+    mut source: impl Read + Send + 'static,
+    mut child: Child,
+    command: &str,
+    timeout: Duration,
+) -> Result<()> {
     let child_stdin = child
         .stdin
         .take()
-        .ok_or_else(|| eyre!("failed to open wl-copy stdin"))?;
+        .ok_or_else(|| eyre!("failed to open {command} stdin"))?;
 
     let pipe_handle = std::thread::spawn(move || {
-        let mut source = Cursor::new(bytes);
         let mut sink = child_stdin;
         io::copy(&mut source, &mut sink)
     });
-    let copied_bytes = pipe_handle
+    pipe_handle
         .join()
         .map_err(|_| eyre!("clipboard pipe thread panicked"))??;
-    wait_for_clipboard_provider_start(&mut child, "wl-copy", timeout)?;
-
-    if copied_bytes == 0 {
-        return Err(eyre!("rendered clipboard content is empty"));
-    }
-
+    wait_for_clipboard_provider_start(&mut child, command, timeout)?;
     Ok(())
 }
 
@@ -332,6 +324,23 @@ mod tests {
                 .expect("valid HTML should render");
 
         assert_eq!(rendered.as_deref(), Some(b"Hello & goodbye".as_slice()));
+    }
+
+    #[test]
+    fn rendered_copy_accepts_empty_visible_html() {
+        let rendered = rendered_clipboard_content("text/html", b"<style>x {}</style>".to_vec())
+            .expect("valid empty HTML should render");
+
+        assert_eq!(rendered, Some(Vec::new()));
+    }
+
+    #[test]
+    fn rendered_copy_honors_the_declared_charset() {
+        let rendered =
+            rendered_clipboard_content("text/html;charset=iso-8859-1", b"<p>caf\xe9</p>".to_vec())
+                .expect("declared HTML charset should render");
+
+        assert_eq!(rendered.as_deref(), Some("café".as_bytes()));
     }
 
     #[test]

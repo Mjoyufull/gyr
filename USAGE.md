@@ -230,6 +230,9 @@ fsel --cclip -vvvvx
 Binary clipboard payloads are never printed as text. Image entries continue to use the terminal
 image preview when supported. `-x` changes only HTML copying: rendered HTML is offered as
 `text/plain;charset=utf-8`; plain text, images, and other MIME types retain the original copy path.
+`wl-copy` is used when available, with `cclip copy -` as the rendered-text fallback. HTML previews
+load complete content only for selected entries, honor declared MIME charsets, preserve `<pre>`
+whitespace, and decode standard named entities.
 
 ### Tag Management
 ```sh

@@ -152,7 +152,7 @@ Wipe ALL tags from cclip entries (requires cclip 3.2+). Removes the tag text fro
 Show tag color names in clipboard item display (use with --cclip)
 .TP
 .BR \-x ", " \-\-copy-rendered
-Copy rendered HTML as text/plain;charset=utf-8 instead of preserving the HTML payload. Other MIME types retain the original copy path. This is independent from verbosity, so -vx and -vvvvx show raw diagnostics while copying rendered text.
+Copy rendered HTML as text/plain;charset=utf-8 instead of preserving the HTML payload. wl-copy is used when available, with cclip copy - as a fallback. Other MIME types retain the original copy path. This is independent from verbosity, so -vx and -vvvvx show raw diagnostics while copying rendered text.
 .SS "General Options"
 .TP
 .BR \-h
