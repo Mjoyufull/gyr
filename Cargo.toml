@@ -58,6 +58,8 @@ ratatui-image = { version = "10.0", default-features = false, features = ["cross
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 futures = "0.3"
 unicode-width = "0.2.2"
+encoding_rs = "0.8"
+html-escape = "0.2"
 
 jwalk = "0.8.1"
 rayon = "1.11.0"

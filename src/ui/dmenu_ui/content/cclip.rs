@@ -1,6 +1,9 @@
+//! Lazy, bounded cclip content hydration for the selected preview.
+
 use super::super::DmenuUI;
 use std::process::Command;
-use std::sync::mpsc::{self, TryRecvError};
+
+const MAX_CONTENT_REQUESTS: usize = 4;
 
 impl<'a> DmenuUI<'a> {
     /// Check if an Item is a cclip item (has tab-separated format with rowid).
@@ -41,21 +44,22 @@ impl<'a> DmenuUI<'a> {
             let mime_type = parts[1].trim();
             let preview = parts[2];
 
+            self.drain_cclip_content_results();
             let content = if let Some(cached_content) = self.content_cache.get(rowid) {
                 cached_content.clone()
-            } else if let Some(fetched_content) = self.poll_cclip_content_request(rowid) {
-                fetched_content
-            } else if !preview.is_empty() {
+            } else if self.content_failures.contains(rowid) {
+                format!("[Failed to get content for rowid {rowid}]")
+            } else if crate::modes::cclip::html::is_textual_mime(mime_type) {
                 let raw_content = self.cclip_verbosity > 0;
                 self.start_cclip_content_request(rowid, mime_type, raw_content);
                 let display_preview = content_for_view(mime_type, preview, raw_content);
                 if display_preview.is_empty() {
-                    "[Loading HTML content...]".to_string()
+                    "[Loading content...]".to_string()
                 } else {
                     display_preview
                 }
             } else {
-                format!("[Failed to get content for rowid {}]", rowid)
+                format!("[{mime_type} content]")
             };
 
             self.add_diagnostics(rowid, mime_type, content)
@@ -67,13 +71,18 @@ impl<'a> DmenuUI<'a> {
     }
 
     fn start_cclip_content_request(&mut self, rowid: &str, mime_type: &str, raw_content: bool) {
-        if self.content_requests.contains_key(rowid) {
+        if self.content_requests.contains(rowid)
+            || self.content_failures.contains(rowid)
+            || self.content_requests.len() >= MAX_CONTENT_REQUESTS
+        {
             return;
         }
 
         let rowid_owned = rowid.to_string();
         let mime_type_owned = mime_type.to_string();
-        let (tx, rx) = mpsc::channel();
+        let generation = self.content_generation;
+        let sender = self.content_sender.clone();
+        self.content_requests.insert(rowid.to_string());
         std::thread::spawn(move || {
             let content = Command::new("cclip")
                 .args(["get", &rowid_owned])
@@ -83,25 +92,21 @@ impl<'a> DmenuUI<'a> {
                 .and_then(|output| {
                     decode_content_for_view(&mime_type_owned, output.stdout, raw_content)
                 });
-            let _ = tx.send(content);
+            let _ = sender.send((generation, rowid_owned, content));
         });
-        self.content_requests.insert(rowid.to_string(), rx);
     }
 
-    fn poll_cclip_content_request(&mut self, rowid: &str) -> Option<String> {
-        let receiver = self.content_requests.get(rowid)?;
-        match receiver.try_recv() {
-            Ok(Some(content)) => {
-                self.content_requests.remove(rowid);
-                self.content_cache
-                    .insert(rowid.to_string(), content.clone());
-                Some(content)
+    pub(super) fn drain_cclip_content_results(&mut self) {
+        while let Ok((generation, rowid, content)) = self.content_receiver.try_recv() {
+            if generation != self.content_generation {
+                continue;
             }
-            Ok(None) | Err(TryRecvError::Disconnected) => {
-                self.content_requests.remove(rowid);
-                None
+            self.content_requests.remove(&rowid);
+            if let Some(content) = content {
+                self.content_cache.insert(rowid, content);
+            } else {
+                self.content_failures.insert(rowid);
             }
-            Err(TryRecvError::Empty) => None,
         }
     }
 
@@ -113,7 +118,7 @@ impl<'a> DmenuUI<'a> {
         format!("[cclip rowid={rowid} mime={mime_type} view=raw] {content}")
     }
 
-    pub(super) fn get_cclip_diagnostics(&self, item: &crate::common::Item) -> Option<String> {
+    pub(crate) fn get_cclip_diagnostics(&self, item: &crate::common::Item) -> Option<String> {
         if self.cclip_verbosity < 3 {
             return None;
         }
@@ -169,27 +174,17 @@ fn content_for_view(mime_type: &str, content: &str, raw_content: bool) -> String
 }
 
 fn decode_content_for_view(mime_type: &str, bytes: Vec<u8>, raw_content: bool) -> Option<String> {
-    if !is_textual_mime(mime_type) {
+    if !crate::modes::cclip::html::is_textual_mime(mime_type) {
         return None;
     }
 
-    let content = String::from_utf8(bytes).ok()?;
+    let content = crate::modes::cclip::html::decode_text_bytes(mime_type, &bytes).ok()?;
     Some(content_for_view(mime_type, &content, raw_content))
-}
-
-fn is_textual_mime(mime_type: &str) -> bool {
-    let essence = mime_type.split(';').next().unwrap_or(mime_type).trim();
-    let normalized = essence.to_ascii_lowercase();
-    normalized.starts_with("text/")
-        || normalized == "application/json"
-        || normalized == "application/xml"
-        || normalized.ends_with("+json")
-        || normalized.ends_with("+xml")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::decode_content_for_view;
+    use super::{DmenuUI, decode_content_for_view};
 
     #[test]
     fn fetched_html_is_rendered_by_default() {
@@ -208,6 +203,28 @@ mod tests {
     }
 
     #[test]
+    fn fetched_html_uses_its_declared_charset() {
+        let content = decode_content_for_view(
+            "text/html;charset=iso-8859-1",
+            b"<p>caf\xe9</p>".to_vec(),
+            false,
+        );
+
+        assert_eq!(content.as_deref(), Some("café"));
+    }
+
+    #[test]
+    fn textual_application_mime_is_displayed() {
+        let content = decode_content_for_view(
+            "application/javascript",
+            b"const answer = 42;".to_vec(),
+            false,
+        );
+
+        assert_eq!(content.as_deref(), Some("const answer = 42;"));
+    }
+
+    #[test]
     fn png_bytes_are_never_lossily_rendered_as_text() {
         let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
 
@@ -219,5 +236,43 @@ mod tests {
         let bytes = b"apparently readable binary".to_vec();
 
         assert_eq!(decode_content_for_view("image/svg", bytes, true), None);
+    }
+
+    #[test]
+    fn completed_content_requests_clear_the_pending_wakeup() {
+        let mut ui = DmenuUI::new(Vec::new(), false, false);
+        ui.content_requests.insert("42".to_string());
+        ui.content_sender
+            .send((
+                ui.content_generation,
+                "42".to_string(),
+                Some("ready".to_string()),
+            ))
+            .expect("content result should send");
+
+        assert!(ui.has_pending_cclip_content());
+        ui.drain_cclip_content_results();
+
+        assert!(!ui.has_pending_cclip_content());
+        assert_eq!(
+            ui.content_cache.get("42").map(String::as_str),
+            Some("ready")
+        );
+    }
+
+    #[test]
+    fn stale_content_generations_are_discarded() {
+        let mut ui = DmenuUI::new(Vec::new(), false, false);
+        ui.content_sender
+            .send((
+                ui.content_generation.wrapping_add(1),
+                "42".to_string(),
+                Some("stale".to_string()),
+            ))
+            .expect("stale result should send");
+
+        ui.drain_cclip_content_results();
+
+        assert!(!ui.content_cache.contains_key("42"));
     }
 }

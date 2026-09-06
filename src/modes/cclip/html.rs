@@ -1,6 +1,10 @@
-//! Lightweight HTML-to-text conversion for clipboard display.
+//! HTML clipboard decoding and lightweight visible-text rendering.
+
+use encoding_rs::{Encoding, UTF_8};
+use std::borrow::Cow;
 
 const HIDDEN_ELEMENTS: &[&str] = &["head", "noscript", "script", "style", "svg", "template"];
+const RAW_TEXT_ELEMENTS: &[&str] = &["script", "style"];
 const BOUNDARY_ELEMENTS: &[&str] = &[
     "address",
     "article",
@@ -39,9 +43,40 @@ const BOUNDARY_ELEMENTS: &[&str] = &[
 ];
 
 pub(crate) fn is_html_mime(mime_type: &str) -> bool {
-    let essence = mime_type.split(';').next().unwrap_or(mime_type).trim();
+    let essence = mime_essence(mime_type);
     essence.eq_ignore_ascii_case("text/html")
         || essence.eq_ignore_ascii_case("application/xhtml+xml")
+}
+
+pub(crate) fn is_textual_mime(mime_type: &str) -> bool {
+    let normalized = mime_essence(mime_type).to_ascii_lowercase();
+    normalized.starts_with("text/")
+        || matches!(
+            normalized.as_str(),
+            "application/ecmascript"
+                | "application/javascript"
+                | "application/json"
+                | "application/sql"
+                | "application/toml"
+                | "application/x-javascript"
+                | "application/x-yaml"
+                | "application/xml"
+                | "application/yaml"
+        )
+        || normalized.ends_with("+json")
+        || normalized.ends_with("+xml")
+}
+
+pub(crate) fn decode_text_bytes(mime_type: &str, bytes: &[u8]) -> Result<String, &'static str> {
+    let encoding = match charset(mime_type) {
+        Some(label) => Encoding::for_label(label.as_bytes()).ok_or("unsupported MIME charset")?,
+        None => UTF_8,
+    };
+    let (decoded, _, had_errors) = encoding.decode(bytes);
+    if had_errors {
+        return Err("clipboard content is invalid for its MIME charset");
+    }
+    Ok(decoded.into_owned())
 }
 
 pub(crate) fn text_for_display(mime_type: &str, content: &str) -> String {
@@ -52,22 +87,43 @@ pub(crate) fn text_for_display(mime_type: &str, content: &str) -> String {
     }
 }
 
+fn mime_essence(mime_type: &str) -> &str {
+    mime_type.split(';').next().unwrap_or(mime_type).trim()
+}
+
+fn charset(mime_type: &str) -> Option<&str> {
+    mime_type.split(';').skip(1).find_map(|parameter| {
+        let (name, value) = parameter.split_once('=')?;
+        name.trim()
+            .eq_ignore_ascii_case("charset")
+            .then(|| value.trim().trim_matches(['\'', '"']))
+    })
+}
+
 fn to_plain_text(html: &str) -> String {
     let mut renderer = TextRenderer::default();
     let mut cursor = 0;
 
     while cursor < html.len() {
         let remaining = &html[cursor..];
+        if let Some(raw_element) = renderer.raw_text_element()
+            && !starts_with_closing_tag(remaining, raw_element)
+        {
+            let Some(offset) = closing_tag_offset(remaining, raw_element) else {
+                break;
+            };
+            cursor += offset;
+            continue;
+        }
+
         if remaining.starts_with("<!--") {
             cursor += comment_len(remaining);
         } else if remaining.starts_with('<') && looks_like_tag(remaining) {
-            if let Some(tag_len) = tag_len(remaining) {
-                renderer.push_tag(&remaining[1..tag_len - 1]);
-                cursor += tag_len;
-            } else {
-                renderer.push_text("<");
-                cursor += 1;
-            }
+            let Some(tag_len) = tag_len(remaining) else {
+                break;
+            };
+            renderer.push_tag(&remaining[1..tag_len - 1]);
+            cursor += tag_len;
         } else {
             let text_len = remaining.find('<').unwrap_or(remaining.len()).max(1);
             renderer.push_text(&remaining[..text_len]);
@@ -81,59 +137,80 @@ fn to_plain_text(html: &str) -> String {
 #[derive(Default)]
 struct TextRenderer {
     output: String,
-    hidden_depth: usize,
+    hidden_elements: Vec<String>,
+    pre_depth: usize,
     pending_space: bool,
 }
 
 impl TextRenderer {
+    fn raw_text_element(&self) -> Option<&str> {
+        self.hidden_elements
+            .last()
+            .filter(|name| is_raw_text_element(name))
+            .map(String::as_str)
+    }
+
     fn push_tag(&mut self, raw_tag: &str) {
         let tag = Tag::parse(raw_tag);
         if tag.name.is_empty() {
             return;
         }
 
-        if tag.closing && is_hidden_element(tag.name) {
-            self.hidden_depth = self.hidden_depth.saturating_sub(1);
+        if let Some(hidden) = self.hidden_elements.last() {
+            if tag.closing && tag.name.eq_ignore_ascii_case(hidden) {
+                self.hidden_elements.pop();
+            } else if !tag.closing && !tag.self_closing && is_hidden_element(tag.name) {
+                self.hidden_elements.push(tag.name.to_ascii_lowercase());
+            }
+            return;
         }
 
-        if self.hidden_depth == 0 && is_boundary_element(tag.name) {
+        if tag.closing && tag.name.eq_ignore_ascii_case("pre") {
+            self.pre_depth = self.pre_depth.saturating_sub(1);
+        }
+        if is_boundary_element(tag.name) {
             self.pending_space = !self.output.is_empty();
         }
-
-        if !tag.closing && !tag.self_closing && is_hidden_element(tag.name) {
-            self.hidden_depth += 1;
+        if !tag.closing && !tag.self_closing {
+            if is_hidden_element(tag.name) {
+                self.hidden_elements.push(tag.name.to_ascii_lowercase());
+            } else if tag.name.eq_ignore_ascii_case("pre") {
+                self.pre_depth += 1;
+            }
         }
     }
 
     fn push_text(&mut self, text: &str) {
-        if self.hidden_depth > 0 {
+        if !self.hidden_elements.is_empty() {
             return;
         }
 
-        let mut cursor = 0;
-        while cursor < text.len() {
-            let remaining = &text[cursor..];
-            if remaining.starts_with('&')
-                && let Some((decoded, consumed)) = decode_entity(remaining)
-            {
-                self.push_decoded(&decoded);
-                cursor += consumed;
-                continue;
-            }
-
-            let ch = remaining
-                .chars()
-                .next()
-                .expect("remaining text is not empty");
-            self.push_char(ch);
-            cursor += ch.len_utf8();
+        let decoded = html_escape::decode_html_entities(text);
+        match decoded {
+            Cow::Borrowed(text) => self.push_decoded(text),
+            Cow::Owned(text) => self.push_decoded(&text),
         }
     }
 
     fn push_decoded(&mut self, decoded: &str) {
-        for ch in decoded.chars() {
-            self.push_char(ch);
+        if self.pre_depth > 0 {
+            self.push_preformatted(decoded);
+        } else {
+            for ch in decoded.chars() {
+                self.push_char(ch);
+            }
         }
+    }
+
+    fn push_preformatted(&mut self, text: &str) {
+        if self.pending_space {
+            if !self.output.is_empty() && !self.output.ends_with(char::is_whitespace) {
+                self.output.push('\n');
+            }
+            self.pending_space = false;
+        }
+        self.output
+            .push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
     }
 
     fn push_char(&mut self, ch: char) {
@@ -143,14 +220,16 @@ impl TextRenderer {
         }
 
         if self.pending_space {
-            self.output.push(' ');
+            if !self.output.ends_with(char::is_whitespace) {
+                self.output.push(' ');
+            }
             self.pending_space = false;
         }
         self.output.push(ch);
     }
 
     fn finish(self) -> String {
-        self.output
+        self.output.trim_matches('\n').to_string()
     }
 }
 
@@ -203,8 +282,37 @@ fn tag_len(remaining: &str) -> Option<usize> {
     None
 }
 
+fn closing_tag_offset(input: &str, name: &str) -> Option<usize> {
+    input
+        .char_indices()
+        .find_map(|(offset, _)| starts_with_closing_tag(&input[offset..], name).then_some(offset))
+}
+
+fn starts_with_closing_tag(input: &str, name: &str) -> bool {
+    if input.as_bytes().get(..2) != Some(b"</") {
+        return false;
+    }
+    let name_end = name.len().saturating_add(2);
+    let Some(candidate) = input.get(2..name_end) else {
+        return false;
+    };
+    if !candidate.eq_ignore_ascii_case(name) {
+        return false;
+    }
+    input[name_end..]
+        .chars()
+        .next()
+        .is_some_and(|ch| ch == '>' || ch.is_ascii_whitespace())
+}
+
 fn is_hidden_element(name: &str) -> bool {
     HIDDEN_ELEMENTS
+        .iter()
+        .any(|element| name.eq_ignore_ascii_case(element))
+}
+
+fn is_raw_text_element(name: &str) -> bool {
+    RAW_TEXT_ELEMENTS
         .iter()
         .any(|element| name.eq_ignore_ascii_case(element))
 }
@@ -215,38 +323,9 @@ fn is_boundary_element(name: &str) -> bool {
         .any(|element| name.eq_ignore_ascii_case(element))
 }
 
-fn decode_entity(remaining: &str) -> Option<(String, usize)> {
-    let semicolon = remaining.find(';')?;
-    if semicolon > 12 {
-        return None;
-    }
-
-    let entity = &remaining[1..semicolon];
-    let decoded = match entity {
-        "amp" => "&".to_string(),
-        "apos" => "'".to_string(),
-        "gt" => ">".to_string(),
-        "lt" => "<".to_string(),
-        "nbsp" => " ".to_string(),
-        "quot" => "\"".to_string(),
-        numeric if numeric.starts_with("#x") || numeric.starts_with("#X") => {
-            decode_numeric_entity(&numeric[2..], 16)?
-        }
-        numeric if numeric.starts_with('#') => decode_numeric_entity(&numeric[1..], 10)?,
-        _ => return None,
-    };
-
-    Some((decoded, semicolon + 1))
-}
-
-fn decode_numeric_entity(digits: &str, radix: u32) -> Option<String> {
-    let codepoint = u32::from_str_radix(digits, radix).ok()?;
-    char::from_u32(codepoint).map(|ch| ch.to_string())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{text_for_display, to_plain_text};
+    use super::{decode_text_bytes, is_textual_mime, text_for_display, to_plain_text};
 
     #[test]
     fn renders_visible_text_without_tags_or_metadata() {
@@ -254,47 +333,66 @@ mod tests {
             r#"<meta http-equiv="content-type" content="text/html; charset=utf-8">"#,
             r#"<div class="message"><strong>Hello</strong> world</div>"#
         );
-
         assert_eq!(to_plain_text(html), "Hello world");
     }
 
     #[test]
-    fn decodes_named_and_numeric_entities() {
-        let html = "<p>Tom &amp; Jerry&nbsp;&#x1F63A; &#62; Spike</p>";
-
-        assert_eq!(to_plain_text(html), "Tom & Jerry 😺 > Spike");
+    fn decodes_standard_named_and_numeric_entities() {
+        let html = "<p>&copy; Tom &amp; Jerry&nbsp;&#x1F63A; &euro; &mdash; &#62;</p>";
+        assert_eq!(to_plain_text(html), "© Tom & Jerry 😺 € — >");
     }
 
     #[test]
-    fn omits_non_visible_element_content() {
+    fn omits_raw_text_even_when_it_contains_tag_like_text() {
         let html = concat!(
-            "<style>.secret { color: red; }</style>",
+            "<style>.secret::after { content: '<style>'; }</style>",
             "<p>Visible</p>",
-            "<script>alert('hidden')</script>",
+            "<script>const café = '<script>'; alert(café)</script>",
             "<svg><title>Icon</title></svg>"
         );
-
         assert_eq!(to_plain_text(html), "Visible");
+    }
+
+    #[test]
+    fn preserves_preformatted_whitespace() {
+        let html = "<pre>first\n  second\n\tthird</pre>";
+        assert_eq!(to_plain_text(html), "first\n  second\n\tthird");
     }
 
     #[test]
     fn preserves_boundaries_between_block_elements() {
         let html = "<div>first</div><div>second<br>third</div>";
-
         assert_eq!(to_plain_text(html), "first second third");
     }
 
     #[test]
     fn leaves_non_html_content_unchanged() {
         let text = "2 < 3 & plain";
-
         assert_eq!(text_for_display("text/plain;charset=utf-8", text), text);
     }
 
     #[test]
-    fn treats_unclosed_tags_as_text_without_panicking() {
-        let html = "<strong title=\"unfinished 😺";
+    fn drops_unfinished_markup_from_truncated_previews() {
+        assert_eq!(to_plain_text("<strong title=\"unfinished 😺"), "");
+    }
 
-        assert_eq!(to_plain_text(html), "<strong title=\"unfinished 😺");
+    #[test]
+    fn ampersands_without_entities_remain_plain_text() {
+        let text = "&".repeat(32_768);
+        assert_eq!(to_plain_text(&text), text);
+    }
+
+    #[test]
+    fn decodes_the_declared_mime_charset() {
+        let decoded = decode_text_bytes("text/html; charset=iso-8859-1", b"caf\xe9")
+            .expect("declared charset should decode");
+        assert_eq!(decoded, "café");
+    }
+
+    #[test]
+    fn recognizes_textual_application_mime_types() {
+        assert!(is_textual_mime("application/javascript"));
+        assert!(is_textual_mime("application/problem+json"));
+        assert!(!is_textual_mime("application/octet-stream"));
     }
 }

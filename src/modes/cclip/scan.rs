@@ -1,4 +1,4 @@
-// Clipboard database scanning functions
+//! Clipboard database queries and history parsing.
 
 use super::CclipItem;
 use eyre::{Result, eyre};
@@ -50,7 +50,6 @@ pub fn get_clipboard_history() -> Result<Vec<CclipItem>> {
         }
     }
 
-    hydrate_html_previews(&mut items);
     Ok(items)
 }
 
@@ -65,29 +64,13 @@ pub fn get_clipboard_history_by_tag(tag: &str) -> Result<Vec<CclipItem>> {
         return Err(eyre!("Failed to get clipboard history"));
     }
 
-    let mut items: Vec<CclipItem> = String::from_utf8_lossy(&output.stdout)
+    let items: Vec<CclipItem> = String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(|line| CclipItem::from_line(line.to_string()))
         .collect::<Result<_>>()?;
 
-    hydrate_html_previews(&mut items);
     Ok(items)
-}
-
-fn hydrate_html_previews(items: &mut [CclipItem]) {
-    // Fetch only when cclip's byte-truncated preview ends inside metadata or opening attributes.
-    for item in items
-        .iter_mut()
-        .filter(|item| super::html::is_html_mime(&item.mime_type) && item.preview.is_empty())
-    {
-        let Ok(output) = Command::new("cclip").args(["get", &item.rowid]).output() else {
-            continue;
-        };
-        if output.status.success() {
-            item.replace_html_preview(&String::from_utf8_lossy(&output.stdout));
-        }
-    }
 }
 
 /// Get all unique tags from cclip database

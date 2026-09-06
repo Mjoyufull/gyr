@@ -1,3 +1,5 @@
+//! Content-panel rendering for dmenu and cclip selections.
+
 mod cclip;
 mod lines;
 
@@ -24,6 +26,7 @@ impl<'a> DmenuUI<'a> {
         panel_width: u16,
         panel_height: u16,
     ) {
+        self.drain_cclip_content_results();
         if let Some(text) =
             tag_mode_lines(&self.tag_mode, self.temp_message_text(), highlight_color)
         {
@@ -35,14 +38,12 @@ impl<'a> DmenuUI<'a> {
             self.text.clear();
             return;
         };
-
         if selected >= self.shown.len() {
             self.text.clear();
             return;
         }
 
         let item = self.shown[selected].clone();
-
         if enable_images && self.is_cclip_image_item(&item) {
             self.text = if hide_image_message {
                 vec![Line::from(Span::raw(String::new()))]
@@ -73,16 +74,13 @@ impl<'a> DmenuUI<'a> {
         } else {
             item.get_content_display()
         };
-
         let display_content =
             lines::normalize_display_content(content, self.show_line_numbers, item.line_number);
         let mut content_lines =
             lines::build_content_lines(&display_content, self.wrap_long_lines, panel_width);
-
         if content_lines.is_empty() {
             content_lines.push(Line::from(Span::raw("[No content]")));
         }
-
         lines::pad_lines_to_height(&mut content_lines, panel_width, panel_height);
         self.text = content_lines;
     }

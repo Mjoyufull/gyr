@@ -1,3 +1,5 @@
+//! Parsed cclip history entries and their list labels.
+
 use crate::common::Item;
 use eyre::{Result, eyre};
 
@@ -100,13 +102,6 @@ impl CclipItem {
         self.get_display_name_with_formatter(None)
     }
 
-    pub(super) fn replace_html_preview(&mut self, content: &str) {
-        let preview = html::text_for_display(&self.mime_type, content);
-        if !preview.is_empty() {
-            self.preview = preview;
-        }
-    }
-
     /// Get display name with rowid number prefix (for show_line_numbers)
     pub fn get_display_name_with_number(&self) -> String {
         self.get_display_name_with_number_formatter(None)
@@ -181,5 +176,14 @@ mod tests {
         assert_eq!(item.preview, "Hello & goodbye");
         assert_eq!(item.get_display_name(), "[tag] Hello & goodbye");
         assert_eq!(item.original_line, original);
+    }
+
+    #[test]
+    fn truncated_html_markup_uses_the_lazy_content_placeholder() {
+        let item = CclipItem::from_line("42\ttext/html\t<meta charset=\"utf-8".to_string())
+            .expect("truncated cclip preview should parse");
+
+        assert!(item.preview.is_empty());
+        assert_eq!(item.get_display_name(), "[HTML content]");
     }
 }

@@ -1,3 +1,5 @@
+//! Clipboard history, content preview, image, and input rendering.
+
 mod input;
 mod panels;
 
@@ -57,7 +59,6 @@ pub(super) fn draw(
         }
 
         let border_type = panels::border_type(options.rounded_borders);
-
         let content_paragraph = Paragraph::new(ui.text.clone())
             .block(panels::panel_block(
                 " Clipboard Preview ",
@@ -78,7 +79,6 @@ pub(super) fn draw(
             .take(max_visible)
             .map(|item| item.to_list_item(Some(tag_metadata_formatter)))
             .collect::<Vec<ListItem>>();
-
         let items_list = List::new(visible_items)
             .block(panels::panel_block(
                 " Clipboard History ",
@@ -93,7 +93,6 @@ pub(super) fn draw(
                 options.highlight_color,
             ))
             .highlight_symbol("> ");
-
         let visible_selection = ui.selected.and_then(|selected| {
             if selected >= ui.scroll_offset && selected < ui.scroll_offset + max_visible {
                 Some(selected - ui.scroll_offset)
@@ -106,12 +105,7 @@ pub(super) fn draw(
         let (input_line, input_title) = input::input_line_and_title(ui, options);
         let text_len = input_line.width();
         let available_width = chunks[input_panel_index].width.saturating_sub(2) as usize;
-        let scroll_x = if text_len > available_width {
-            (text_len - available_width) as u16
-        } else {
-            0
-        };
-
+        let scroll_x = text_len.saturating_sub(available_width) as u16;
         let input_paragraph = Paragraph::new(input_line)
             .block(panels::panel_block(
                 input_title,
@@ -153,6 +147,7 @@ pub(super) fn draw(
                     ),
                     chunks[content_panel_index],
                 );
+                render_image_diagnostics(frame, ui, chunks[content_panel_index], options);
             } else {
                 frame.render_widget(content_paragraph, chunks[content_panel_index]);
             }
@@ -169,11 +164,37 @@ pub(super) fn draw(
     Ok(max_visible)
 }
 
+fn render_image_diagnostics(
+    frame: &mut ratatui::Frame,
+    ui: &DmenuUI<'_>,
+    area: Rect,
+    options: &CclipOptions,
+) {
+    let Some(diagnostics) = ui
+        .selected
+        .and_then(|selected| ui.shown.get(selected))
+        .and_then(|item| ui.get_cclip_diagnostics(item))
+    else {
+        return;
+    };
+    let inner = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
+    if inner.height == 0 {
+        return;
+    }
+    frame.render_widget(
+        Paragraph::new(diagnostics)
+            .style(ratatui::style::Style::default().fg(options.main_text_color)),
+        Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+    );
+}
+
 fn set_synchronized_output(enabled: bool, enter: bool) {
     if !enabled {
         return;
     }
-
     let mut stderr = std::io::stderr();
     let sequence = if enter {
         b"\x1b[?2026h"
@@ -196,7 +217,6 @@ fn render_inline_image(
         width: content_chunk.width.saturating_sub(2),
         height: content_chunk.height.saturating_sub(2),
     };
-
     match image_runtime.render_inline_image(frame, image_area) {
         Ok(rendered) => rendered,
         Err(error) => {
