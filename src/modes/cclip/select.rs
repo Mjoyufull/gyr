@@ -63,7 +63,7 @@ impl CclipItem {
                 String::from_utf8_lossy(&cclip_output.stderr)
             ));
         }
-        copy_result
+        require_original_copy_data(copy_result?)
     }
 
     /// Copy this item back to the clipboard.
@@ -117,7 +117,7 @@ fn copy_reader_with_wl_copy(
     source: impl Read + Send + 'static,
     mime_type: &str,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<u64> {
     let child = Command::new("wl-copy")
         .args(["--type", mime_type])
         .stdin(Stdio::piped())
@@ -134,7 +134,7 @@ fn copy_bytes_with_cclip(bytes: Vec<u8>, timeout: Duration) -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
-    pipe_to_clipboard_provider(Cursor::new(bytes), child, "cclip copy -", timeout)
+    pipe_to_clipboard_provider(Cursor::new(bytes), child, "cclip copy -", timeout).map(|_| ())
 }
 
 fn pipe_to_clipboard_provider(
@@ -142,20 +142,43 @@ fn pipe_to_clipboard_provider(
     mut child: Child,
     command: &str,
     timeout: Duration,
-) -> Result<()> {
-    let child_stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| eyre!("failed to open {command} stdin"))?;
+) -> Result<u64> {
+    let Some(child_stdin) = child.stdin.take() else {
+        terminate_and_reap(&mut child);
+        return Err(eyre!("failed to open {command} stdin"));
+    };
 
     let pipe_handle = std::thread::spawn(move || {
         let mut sink = child_stdin;
         io::copy(&mut source, &mut sink)
     });
-    pipe_handle
-        .join()
-        .map_err(|_| eyre!("clipboard pipe thread panicked"))??;
+    let copy_result = match pipe_handle.join() {
+        Ok(result) => result,
+        Err(_) => {
+            terminate_and_reap(&mut child);
+            return Err(eyre!("clipboard pipe thread panicked"));
+        }
+    };
+    let copied_bytes = match copy_result {
+        Ok(copied_bytes) => copied_bytes,
+        Err(error) => {
+            terminate_and_reap(&mut child);
+            return Err(error.into());
+        }
+    };
     wait_for_clipboard_provider_start(&mut child, command, timeout)?;
+    Ok(copied_bytes)
+}
+
+fn terminate_and_reap(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn require_original_copy_data(copied_bytes: u64) -> Result<()> {
+    if copied_bytes == 0 {
+        return Err(eyre!("cclip get returned no data"));
+    }
     Ok(())
 }
 
@@ -274,8 +297,10 @@ pub fn delete_tag(tag: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ClipboardProviderState, rendered_clipboard_content, wait_for_clipboard_provider_start,
+        ClipboardProviderState, pipe_to_clipboard_provider, rendered_clipboard_content,
+        require_original_copy_data, wait_for_clipboard_provider_start,
     };
+    use std::io::{self, Read};
     use std::process::{Command, Stdio};
     use std::time::Duration;
 
@@ -317,6 +342,34 @@ mod tests {
         assert!(result.is_err());
     }
 
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("source failed"))
+        }
+    }
+
+    #[test]
+    fn provider_is_terminated_when_the_pipe_fails() {
+        let child = Command::new("sh")
+            .args(["-c", "cat >/dev/null; sleep 30"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("test provider should spawn");
+
+        let result = pipe_to_clipboard_provider(
+            FailingReader,
+            child,
+            "test-provider",
+            Duration::from_secs(1),
+        );
+
+        assert!(result.is_err());
+    }
+
     #[test]
     fn rendered_copy_converts_html_to_plain_text() {
         let rendered =
@@ -332,6 +385,12 @@ mod tests {
             .expect("valid empty HTML should render");
 
         assert_eq!(rendered, Some(Vec::new()));
+    }
+
+    #[test]
+    fn original_copy_still_rejects_empty_content() {
+        assert!(require_original_copy_data(0).is_err());
+        assert!(require_original_copy_data(1).is_ok());
     }
 
     #[test]

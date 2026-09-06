@@ -72,10 +72,7 @@ pub(crate) fn decode_text_bytes(mime_type: &str, bytes: &[u8]) -> Result<String,
         Some(label) => Encoding::for_label(label.as_bytes()).ok_or("unsupported MIME charset")?,
         None => UTF_8,
     };
-    let (decoded, _, had_errors) = encoding.decode(bytes);
-    if had_errors {
-        return Err("clipboard content is invalid for its MIME charset");
-    }
+    let (decoded, _, _) = encoding.decode(bytes);
     Ok(decoded.into_owned())
 }
 
@@ -229,7 +226,7 @@ impl TextRenderer {
     }
 
     fn finish(self) -> String {
-        self.output.trim_matches('\n').to_string()
+        self.output
     }
 }
 
@@ -360,6 +357,12 @@ mod tests {
     }
 
     #[test]
+    fn preserves_preformatted_edge_newlines() {
+        let html = "<pre>\nfirst\n</pre>";
+        assert_eq!(to_plain_text(html), "\nfirst\n");
+    }
+
+    #[test]
     fn preserves_boundaries_between_block_elements() {
         let html = "<div>first</div><div>second<br>third</div>";
         assert_eq!(to_plain_text(html), "first second third");
@@ -387,6 +390,13 @@ mod tests {
         let decoded = decode_text_bytes("text/html; charset=iso-8859-1", b"caf\xe9")
             .expect("declared charset should decode");
         assert_eq!(decoded, "café");
+    }
+
+    #[test]
+    fn replaces_invalid_default_utf8_sequences() {
+        let decoded = decode_text_bytes("text/html", b"<p>caf\xe9</p>")
+            .expect("invalid UTF-8 should remain displayable");
+        assert_eq!(decoded, "<p>caf�</p>");
     }
 
     #[test]

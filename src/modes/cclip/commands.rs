@@ -1,3 +1,5 @@
+//! Noninteractive cclip commands and tag-list output.
+
 use eyre::{Result, WrapErr};
 
 use crate::cli::Opts;
@@ -69,10 +71,11 @@ fn print_tag_list(cli: &Opts) -> Result<()> {
         }
 
         for item in items {
+            let preview = printable_preview(&item);
             if cli.verbose.unwrap_or(0) >= 2 {
-                println!("  [{}] {} - {}", item.rowid, item.mime_type, item.preview);
+                println!("  [{}] {} - {}", item.rowid, item.mime_type, preview);
             } else {
-                println!("  {}", item.preview);
+                println!("  {preview}");
             }
         }
         return Ok(());
@@ -98,4 +101,52 @@ fn print_tag_list(cli: &Opts) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn printable_preview(item: &super::CclipItem) -> String {
+    if !super::html::is_html_mime(&item.mime_type) || !item.preview.is_empty() {
+        return item.preview.clone();
+    }
+
+    let fetched = item.get_content_for_preview().ok();
+    noninteractive_preview(&item.mime_type, &item.preview, fetched.as_deref())
+}
+
+fn noninteractive_preview(mime_type: &str, preview: &str, fetched: Option<&[u8]>) -> String {
+    let Some(bytes) = fetched else {
+        return if preview.is_empty() && super::html::is_html_mime(mime_type) {
+            "[HTML content]".to_string()
+        } else {
+            preview.to_string()
+        };
+    };
+    super::html::decode_text_bytes(mime_type, bytes).map_or_else(
+        |_| preview.to_string(),
+        |content| super::html::text_for_display(mime_type, &content),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::noninteractive_preview;
+
+    #[test]
+    fn noninteractive_html_output_uses_fetched_visible_text() {
+        assert_eq!(
+            noninteractive_preview("text/html", "", Some(b"<p>full &amp; readable</p>")),
+            "full & readable"
+        );
+    }
+
+    #[test]
+    fn noninteractive_html_output_keeps_preview_when_fetch_fails() {
+        assert_eq!(
+            noninteractive_preview("text/html", "summary", None),
+            "summary"
+        );
+        assert_eq!(
+            noninteractive_preview("text/html", "", None),
+            "[HTML content]"
+        );
+    }
 }

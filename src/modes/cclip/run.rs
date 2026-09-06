@@ -8,13 +8,10 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::widgets::ListState;
 use scopeguard::defer;
 use std::io;
-use std::time::Duration;
 
 use super::commands::{handle_noninteractive_mode, load_history};
 use super::items::build_items;
 use super::state::CclipOptions;
-
-const CONTENT_REDRAW_INTERVAL: Duration = Duration::from_millis(16);
 
 /// Run cclip mode - async TUI event loop for clipboard history.
 pub async fn run(cli: &Opts) -> Result<()> {
@@ -109,8 +106,8 @@ pub async fn run(cli: &Opts) -> Result<()> {
             Some(_) = image_runtime.redraw_rx.recv() => {
                 needs_redraw = true;
             }
-            _ = tokio::time::sleep(CONTENT_REDRAW_INTERVAL), if ui.has_pending_cclip_content() => {
-                needs_redraw = true;
+            completed = ui.wait_for_cclip_content(), if ui.has_cclip_content_activity() => {
+                needs_redraw = completed;
             }
             maybe_event = input.next() => {
                 let Some(event) = maybe_event else {

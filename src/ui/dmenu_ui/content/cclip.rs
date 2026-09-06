@@ -2,8 +2,20 @@
 
 use super::super::DmenuUI;
 use std::process::Command;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 const MAX_CONTENT_REQUESTS: usize = 4;
+const CONTENT_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+struct ContentPermit(Arc<AtomicUsize>);
+
+impl Drop for ContentPermit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 impl<'a> DmenuUI<'a> {
     /// Check if an Item is a cclip item (has tab-separated format with rowid).
@@ -47,14 +59,16 @@ impl<'a> DmenuUI<'a> {
             self.drain_cclip_content_results();
             let content = if let Some(cached_content) = self.content_cache.get(rowid) {
                 cached_content.clone()
-            } else if self.content_failures.contains(rowid) {
-                format!("[Failed to get content for rowid {rowid}]")
             } else if crate::modes::cclip::html::is_textual_mime(mime_type) {
                 let raw_content = self.cclip_verbosity > 0;
                 self.start_cclip_content_request(rowid, mime_type, raw_content);
                 let display_preview = content_for_view(mime_type, preview, raw_content);
                 if display_preview.is_empty() {
-                    "[Loading content...]".to_string()
+                    if self.content_failures.contains_key(rowid) {
+                        format!("[Failed to get content for rowid {rowid}]")
+                    } else {
+                        "[Loading content...]".to_string()
+                    }
                 } else {
                     display_preview
                 }
@@ -72,41 +86,67 @@ impl<'a> DmenuUI<'a> {
 
     fn start_cclip_content_request(&mut self, rowid: &str, mime_type: &str, raw_content: bool) {
         if self.content_requests.contains(rowid)
-            || self.content_failures.contains(rowid)
-            || self.content_requests.len() >= MAX_CONTENT_REQUESTS
+            || self
+                .content_failures
+                .get(rowid)
+                .is_some_and(|failed_at| failed_at.elapsed() < CONTENT_RETRY_DELAY)
         {
             return;
         }
+        let Some(permit) = acquire_content_permit(&self.content_in_flight) else {
+            return;
+        };
 
         let rowid_owned = rowid.to_string();
         let mime_type_owned = mime_type.to_string();
         let generation = self.content_generation;
         let sender = self.content_sender.clone();
+        self.content_failures.remove(rowid);
         self.content_requests.insert(rowid.to_string());
         std::thread::spawn(move || {
-            let content = Command::new("cclip")
-                .args(["get", &rowid_owned])
-                .output()
-                .ok()
-                .filter(|output| output.status.success())
-                .and_then(|output| {
-                    decode_content_for_view(&mime_type_owned, output.stdout, raw_content)
-                });
+            let content = std::panic::catch_unwind(|| {
+                Command::new("cclip")
+                    .args(["get", &rowid_owned])
+                    .output()
+                    .ok()
+                    .filter(|output| output.status.success())
+                    .and_then(|output| {
+                        decode_content_for_view(&mime_type_owned, output.stdout, raw_content)
+                    })
+            })
+            .ok()
+            .flatten();
+            drop(permit);
             let _ = sender.send((generation, rowid_owned, content));
         });
     }
 
     pub(super) fn drain_cclip_content_results(&mut self) {
-        while let Ok((generation, rowid, content)) = self.content_receiver.try_recv() {
-            if generation != self.content_generation {
-                continue;
-            }
-            self.content_requests.remove(&rowid);
-            if let Some(content) = content {
-                self.content_cache.insert(rowid, content);
-            } else {
-                self.content_failures.insert(rowid);
-            }
+        while let Ok(result) = self.content_receiver.try_recv() {
+            self.apply_cclip_content_result(result);
+        }
+    }
+
+    pub(crate) async fn wait_for_cclip_content(&mut self) -> bool {
+        let Some(result) = self.content_receiver.recv().await else {
+            return false;
+        };
+        self.apply_cclip_content_result(result);
+        self.drain_cclip_content_results();
+        true
+    }
+
+    fn apply_cclip_content_result(&mut self, result: super::super::CclipContentResult) {
+        let (generation, rowid, content) = result;
+        if generation != self.content_generation {
+            return;
+        }
+        self.content_requests.remove(&rowid);
+        if let Some(content) = content {
+            self.content_failures.remove(&rowid);
+            self.content_cache.insert(rowid, content);
+        } else {
+            self.content_failures.insert(rowid, Instant::now());
         }
     }
 
@@ -177,14 +217,29 @@ fn decode_content_for_view(mime_type: &str, bytes: Vec<u8>, raw_content: bool) -
     if !crate::modes::cclip::html::is_textual_mime(mime_type) {
         return None;
     }
+    if image::guess_format(&bytes).is_ok() {
+        return None;
+    }
 
     let content = crate::modes::cclip::html::decode_text_bytes(mime_type, &bytes).ok()?;
     Some(content_for_view(mime_type, &content, raw_content))
 }
 
+fn acquire_content_permit(in_flight: &Arc<AtomicUsize>) -> Option<ContentPermit> {
+    in_flight
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+            (count < MAX_CONTENT_REQUESTS).then_some(count + 1)
+        })
+        .ok()
+        .map(|_| ContentPermit(Arc::clone(in_flight)))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DmenuUI, decode_content_for_view};
+    use super::{DmenuUI, MAX_CONTENT_REQUESTS, acquire_content_permit, decode_content_for_view};
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+    use std::time::Instant;
 
     #[test]
     fn fetched_html_is_rendered_by_default() {
@@ -211,6 +266,13 @@ mod tests {
         );
 
         assert_eq!(content.as_deref(), Some("café"));
+    }
+
+    #[test]
+    fn fetched_text_replaces_invalid_default_utf8() {
+        let content = decode_content_for_view("text/html", b"<p>caf\xe9</p>".to_vec(), false);
+
+        assert_eq!(content.as_deref(), Some("caf�"));
     }
 
     #[test]
@@ -250,10 +312,10 @@ mod tests {
             ))
             .expect("content result should send");
 
-        assert!(ui.has_pending_cclip_content());
+        assert!(ui.content_requests.contains("42"));
         ui.drain_cclip_content_results();
 
-        assert!(!ui.has_pending_cclip_content());
+        assert!(!ui.content_requests.contains("42"));
         assert_eq!(
             ui.content_cache.get("42").map(String::as_str),
             Some("ready")
@@ -274,5 +336,33 @@ mod tests {
         ui.drain_cclip_content_results();
 
         assert!(!ui.content_cache.contains_key("42"));
+    }
+
+    #[test]
+    fn failed_fetch_falls_back_to_the_history_preview() {
+        let mut ui = DmenuUI::new(Vec::new(), false, false);
+        ui.content_failures.insert("42".to_string(), Instant::now());
+        let item = crate::common::Item::new_simple(
+            "42\ttext/html\tusable preview".to_string(),
+            "usable preview".to_string(),
+            1,
+        );
+
+        assert_eq!(ui.get_cclip_content_for_display(&item), "usable preview");
+    }
+
+    #[test]
+    fn content_permits_remain_bounded_across_generations() {
+        let mut ui = DmenuUI::new(Vec::new(), false, false);
+        let in_flight = Arc::clone(&ui.content_in_flight);
+        let permits = (0..MAX_CONTENT_REQUESTS)
+            .map(|_| acquire_content_permit(&in_flight).expect("permit should be available"))
+            .collect::<Vec<_>>();
+
+        ui.reset_cclip_content();
+        assert!(acquire_content_permit(&in_flight).is_none());
+        assert_eq!(in_flight.load(Ordering::Acquire), MAX_CONTENT_REQUESTS);
+        drop(permits);
+        assert_eq!(in_flight.load(Ordering::Acquire), 0);
     }
 }
