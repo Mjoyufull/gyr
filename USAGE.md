@@ -234,7 +234,7 @@ image preview when supported. `-x` changes only HTML copying: rendered HTML is o
 HTML previews load complete content only for selected entries; noninteractive tagged listings also
 hydrate otherwise blank truncated HTML. Text decoding honors declared MIME charsets, replaces
 invalid byte sequences for display, preserves `<pre>` whitespace, and decodes standard named
-entities.
+entities. Empty clipboard payloads remain valid on both original and rendered copy paths.
 
 ### Tag Management
 ```sh
