@@ -175,8 +175,8 @@ pub(super) fn draw(
                 selected_name,
                 selected_count: ui.selected.map_or(0, |selected| selected + 1),
                 total_count: ui.shown.len(),
-                primary_action: "copy",
-                exit_action: "close",
+                primary_action: input_lines.primary_action,
+                exit_action: input_lines.exit_action,
             },
             crate::ui::InputPanelTheme {
                 style: options.input_panel_style,

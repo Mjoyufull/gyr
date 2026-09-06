@@ -189,8 +189,7 @@ impl ImageRuntime {
         if let Some(manager) = &mut self.image_manager
             && let Ok(mut manager_lock) = manager.try_lock()
         {
-            manager_lock.render(frame, area)?;
-            return Ok(true);
+            return manager_lock.render(frame, area);
         }
 
         Ok(false)

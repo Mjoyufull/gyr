@@ -16,6 +16,7 @@ use theme::detect_icon_theme;
 
 const ICON_EXTENSIONS: [&str; 4] = ["png", "svg", "svgz", "xpm"];
 const MAX_THEME_DEPTH: usize = 16;
+const PERSISTENT_CACHE_VERSION: u8 = 2;
 
 /// Resolves desktop-entry icon names through the active XDG icon theme.
 pub(crate) struct IconResolver {
@@ -152,18 +153,18 @@ impl IconResolver {
 
         let icon_name = strip_icon_extension(icon);
         let themes = self.theme_chain();
-        let resolved = themes
+        let persistable = themes
             .iter()
             .find_map(|theme| self.find_declared_in_theme(theme, icon_name, size))
-            .or_else(|| self.find_unthemed(icon_name))
-            .or_else(|| {
-                themes
-                    .iter()
-                    .find_map(|theme| self.find_fallback_in_theme(theme, icon_name, size))
-            });
+            .or_else(|| self.find_unthemed(icon_name));
+        let resolved = persistable.clone().or_else(|| {
+            themes
+                .iter()
+                .find_map(|theme| self.find_fallback_in_theme(theme, icon_name, size))
+        });
         self.cache.insert(cache_key, resolved.clone());
         if let (Some(persistent), Some(key), Some(path)) =
-            (&self.persistent_cache, persistent_key, resolved.as_ref())
+            (&self.persistent_cache, persistent_key, persistable.as_ref())
         {
             let _ = persistent.cache.set(&key, path.clone());
         }
@@ -293,6 +294,7 @@ fn icon_theme_fingerprint(
     resolver: &IconResolver,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    PERSISTENT_CACHE_VERSION.hash(&mut hasher);
     for root in icon_roots.iter().chain(pixmap_roots) {
         hash_path_metadata(root, &mut hasher);
     }
@@ -496,6 +498,39 @@ mod tests {
         assert_eq!(
             resolver_with_cache(root.clone(), db).resolve("editor"),
             Some(icon)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fallback_theme_results_are_revalidated_on_the_next_launch() {
+        let root = temp_dir();
+        let theme = root.join("Selected");
+        fs::create_dir_all(theme.join("16x16/apps"))
+            .expect("small fallback directory should be created");
+        fs::create_dir_all(theme.join("64x64/apps"))
+            .expect("preferred fallback directory should be created");
+        fs::write(theme.join("index.theme"), "[Icon Theme]\n")
+            .expect("theme metadata should be written");
+        let old_icon = theme.join("16x16/apps/editor.png");
+        fs::write(&old_icon, b"small").expect("small fallback icon should be written");
+        let db = Arc::new(
+            redb::Database::create(root.join("cache.redb"))
+                .expect("cache database should be created"),
+        );
+
+        assert_eq!(
+            resolver_with_cache(root.clone(), Arc::clone(&db)).resolve("editor"),
+            Some(old_icon)
+        );
+
+        let preferred_icon = theme.join("64x64/apps/editor.png");
+        fs::write(&preferred_icon, b"preferred")
+            .expect("preferred fallback icon should be written");
+
+        assert_eq!(
+            resolver_with_cache(root.clone(), db).resolve("editor"),
+            Some(preferred_icon)
         );
         let _ = fs::remove_dir_all(root);
     }

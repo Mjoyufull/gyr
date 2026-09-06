@@ -274,25 +274,27 @@ impl ImageManager {
     }
 
     /// Render the current image into the given area
-    pub fn render(&mut self, f: &mut Frame, area: Rect) -> Result<()> {
-        if let Some(rowid) = &self.current_rowid
-            && let Some(protocol) = self.cache.get_mut(rowid)
-        {
-            match protocol {
-                CachedProtocol::Fixed(protocol) => f.render_widget(Image::new(protocol), area),
-                CachedProtocol::Resizable(protocol) => {
-                    f.render_stateful_widget(
-                        StatefulImage::default().resize(Resize::Fit(None)),
-                        area,
-                        protocol,
-                    );
-                    if let Some(Err(error)) = protocol.last_encoding_result() {
-                        return Err(eyre!("Image encoding failed: {error}"));
-                    }
+    pub fn render(&mut self, f: &mut Frame, area: Rect) -> Result<bool> {
+        let Some(rowid) = &self.current_rowid else {
+            return Ok(false);
+        };
+        let Some(protocol) = self.cache.get_mut(rowid) else {
+            return Ok(false);
+        };
+        match protocol {
+            CachedProtocol::Fixed(protocol) => f.render_widget(Image::new(protocol), area),
+            CachedProtocol::Resizable(protocol) => {
+                f.render_stateful_widget(
+                    StatefulImage::default().resize(Resize::Fit(None)),
+                    area,
+                    protocol,
+                );
+                if let Some(Err(error)) = protocol.last_encoding_result() {
+                    return Err(eyre!("Image encoding failed: {error}"));
                 }
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Render a cached image without changing the manager's current selection.
@@ -1063,6 +1065,8 @@ mod tests {
     };
     use flate2::Compression;
     use flate2::write::GzEncoder;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use ratatui_image::picker::Picker;
     use std::io::{Cursor, Write};
     use std::sync::Arc;
@@ -1185,6 +1189,23 @@ mod tests {
         assert!(!manager.is_cached("first"));
         assert!(manager.is_cached("second"));
         assert_eq!(manager.cache_weight, 4);
+    }
+
+    #[test]
+    fn render_reports_when_no_cached_image_was_drawn() {
+        let mut manager = ImageManager::new(Picker::halfblocks());
+        let mut terminal = Terminal::new(TestBackend::new(10, 4)).expect("terminal should open");
+        let mut rendered = true;
+
+        terminal
+            .draw(|frame| {
+                rendered = manager
+                    .render(frame, frame.area())
+                    .expect("empty image rendering should succeed");
+            })
+            .expect("terminal should draw");
+
+        assert!(!rendered);
     }
 
     #[test]

@@ -9,19 +9,30 @@ pub(super) struct InputLines {
     pub(super) classic: Line<'static>,
     pub(super) command: Line<'static>,
     pub(super) title: &'static str,
+    pub(super) primary_action: &'static str,
+    pub(super) exit_action: &'static str,
 }
 
 pub(super) fn input_lines(ui: &DmenuUI<'_>, options: &CclipOptions) -> InputLines {
+    let (primary_action, exit_action) = command_actions(&ui.tag_mode);
     match &ui.tag_mode {
-        TagMode::PromptingTagName { input, .. } => {
-            prompt_lines("Tag: ", input, options, None, " Tag Name ")
-        }
+        TagMode::PromptingTagName { input, .. } => prompt_lines(
+            "Tag: ",
+            input,
+            options,
+            None,
+            " Tag Name ",
+            primary_action,
+            exit_action,
+        ),
         TagMode::PromptingTagEmoji { input, .. } => prompt_lines(
             "Emoji: ",
             input,
             options,
             Some(" (or blank)"),
             " Tag Emoji ",
+            primary_action,
+            exit_action,
         ),
         TagMode::PromptingTagColor { input, .. } => prompt_lines(
             "Color: ",
@@ -29,6 +40,8 @@ pub(super) fn input_lines(ui: &DmenuUI<'_>, options: &CclipOptions) -> InputLine
             options,
             Some(" (hex/name or blank)"),
             " Tag Color ",
+            primary_action,
+            exit_action,
         ),
         TagMode::RemovingTag { input, .. } => prompt_lines(
             "Remove: ",
@@ -36,13 +49,32 @@ pub(super) fn input_lines(ui: &DmenuUI<'_>, options: &CclipOptions) -> InputLine
             options,
             Some(" (blank = all)"),
             " Remove Tag ",
+            primary_action,
+            exit_action,
         ),
         TagMode::Normal => InputLines {
             classic: filter_line(ui, options, true),
             command: filter_line(ui, options, false),
             title: " Filter ",
+            primary_action,
+            exit_action,
         },
     }
+}
+
+fn command_actions(tag_mode: &TagMode) -> (&'static str, &'static str) {
+    let primary = match tag_mode {
+        TagMode::Normal => "copy",
+        TagMode::PromptingTagName { .. } | TagMode::PromptingTagEmoji { .. } => "continue",
+        TagMode::PromptingTagColor { .. } => "apply",
+        TagMode::RemovingTag { .. } => "remove",
+    };
+    let exit = if matches!(tag_mode, TagMode::Normal) {
+        "close"
+    } else {
+        "cancel"
+    };
+    (primary, exit)
 }
 
 fn prompt_lines(
@@ -51,11 +83,15 @@ fn prompt_lines(
     options: &CclipOptions,
     hint: Option<&'static str>,
     title: &'static str,
+    primary_action: &'static str,
+    exit_action: &'static str,
 ) -> InputLines {
     InputLines {
         classic: prompt_line(label, input, options, hint),
         command: prompt_line(label, input, options, hint),
         title,
+        primary_action,
+        exit_action,
     }
 }
 
@@ -123,4 +159,37 @@ fn filter_line(ui: &DmenuUI<'_>, options: &CclipOptions, include_count: bool) ->
         ),
     ]);
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::command_actions;
+    use crate::ui::TagMode;
+
+    #[test]
+    fn command_actions_follow_the_active_tag_step() {
+        let name = TagMode::PromptingTagName {
+            input: String::new(),
+            selected_item: None,
+            available_tags: Vec::new(),
+            selected_tag: None,
+        };
+        let color = TagMode::PromptingTagColor {
+            tag_name: "work".to_string(),
+            emoji: None,
+            input: String::new(),
+            selected_item: None,
+        };
+        let removal = TagMode::RemovingTag {
+            input: String::new(),
+            tags: Vec::new(),
+            selected: None,
+            selected_item: None,
+        };
+
+        assert_eq!(command_actions(&TagMode::Normal), ("copy", "close"));
+        assert_eq!(command_actions(&name), ("continue", "cancel"));
+        assert_eq!(command_actions(&color), ("apply", "cancel"));
+        assert_eq!(command_actions(&removal), ("remove", "cancel"));
+    }
 }
