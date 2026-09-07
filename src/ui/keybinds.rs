@@ -1,4 +1,4 @@
-// keybind configuration
+//! Configurable key matching and compact user-facing binding hints.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use serde::Deserialize;
@@ -72,6 +72,15 @@ impl KeyBind {
                 let parsed_mods = parse_modifiers(modifiers);
                 key_codes_match(parsed.0, code, parsed_mods)
                     && modifiers_match(parsed.0, code, parsed_mods, mods)
+            }
+        }
+    }
+
+    fn hint(&self) -> String {
+        match self {
+            Self::Simple(key) => key.to_lowercase(),
+            Self::WithMod { key, modifiers } => {
+                format!("{}+{}", modifiers.to_lowercase(), key.to_lowercase())
             }
         }
     }
@@ -234,6 +243,14 @@ fn default_cclip_delete() -> Vec<KeyBind> {
 }
 
 impl Keybinds {
+    pub(crate) fn select_hint(&self) -> Option<String> {
+        self.select.first().map(KeyBind::hint)
+    }
+
+    pub(crate) fn exit_hint(&self) -> Option<String> {
+        self.exit.first().map(KeyBind::hint)
+    }
+
     pub fn matches_up(&self, code: KeyCode, mods: KeyModifiers) -> bool {
         self.up.iter().any(|kb| kb.matches(code, mods))
     }
@@ -371,5 +388,19 @@ mod tests {
         assert!(keybinds.matches_up(KeyCode::BackTab, KeyModifiers::SHIFT));
         assert!(keybinds.matches_up(KeyCode::BackTab, KeyModifiers::NONE));
         assert!(!keybinds.matches_up(KeyCode::Tab, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn footer_hints_follow_configured_bindings() {
+        let keybinds: Keybinds = toml::from_str(
+            r#"
+select = [{ key = "y", modifiers = "ctrl" }]
+exit = ["q"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(keybinds.select_hint().as_deref(), Some("ctrl+y"));
+        assert_eq!(keybinds.exit_hint().as_deref(), Some("q"));
     }
 }

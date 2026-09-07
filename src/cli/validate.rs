@@ -50,11 +50,18 @@ pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<
     }
     if uses_desktop_icons
         && default.desktop_icon_mode != DesktopIconMode::None
-        && (default.desktop_icon_horizontal_align_percent > 100
-            || default.desktop_icon_vertical_align_percent > 100)
+        && default.desktop_icon_horizontal_align_percent > 100
     {
         return Err(CliError::message(
-            "Error: Desktop icon alignment must be between 0 and 100\n",
+            "Error: Desktop icon horizontal alignment must be between 0 and 100\n",
+        ));
+    }
+    if uses_desktop_icons
+        && default.desktop_icon_mode.shows_preview()
+        && default.desktop_icon_vertical_align_percent > 100
+    {
+        return Err(CliError::message(
+            "Error: Desktop preview icon vertical alignment must be between 0 and 100\n",
         ));
     }
     if uses_desktop_icons
@@ -71,6 +78,22 @@ pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<
     {
         return Err(CliError::message(
             "Error: Desktop icon list height must be between 1 and 8\n",
+        ));
+    }
+    if uses_desktop_icons
+        && default.desktop_icon_mode.shows_list()
+        && default.desktop_icon_list_gap > 16
+    {
+        return Err(CliError::message(
+            "Error: Desktop icon list gap must be between 0 and 16\n",
+        ));
+    }
+    if uses_desktop_icons
+        && default.desktop_icon_mode.shows_list()
+        && !(-100..=100).contains(&default.desktop_icon_list_vertical_align_percent)
+    {
+        return Err(CliError::message(
+            "Error: Desktop list icon vertical alignment must be between -100 and 100\n",
         ));
     }
 
@@ -216,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn active_icon_layout_rejects_alignment_over_one_hundred() {
+    fn active_icon_layout_rejects_horizontal_alignment_over_one_hundred() {
         let mut options = Opts {
             desktop_icon_horizontal_align_percent: 101,
             ..Opts::default()
@@ -226,8 +249,64 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("alignment must be between 0 and 100")
+                .contains("horizontal alignment must be between 0 and 100")
         );
+    }
+
+    #[test]
+    fn preview_layout_rejects_vertical_alignment_over_one_hundred() {
+        let mut options = Opts {
+            desktop_icon_mode: DesktopIconMode::Preview,
+            desktop_icon_vertical_align_percent: 101,
+            ..Opts::default()
+        };
+
+        let error = validate(&mut options, 0).expect_err("alignment should be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("preview icon vertical alignment must be between 0 and 100")
+        );
+    }
+
+    #[test]
+    fn list_only_layout_ignores_unused_preview_vertical_alignment() {
+        let mut options = Opts {
+            desktop_icon_mode: DesktopIconMode::List,
+            desktop_icon_vertical_align_percent: 101,
+            ..Opts::default()
+        };
+
+        assert!(validate(&mut options, 0).is_ok());
+    }
+
+    #[test]
+    fn active_list_layout_rejects_vertical_alignment_outside_the_signed_range() {
+        for align in [-101, 101] {
+            let mut options = Opts {
+                desktop_icon_mode: DesktopIconMode::List,
+                desktop_icon_list_vertical_align_percent: align,
+                ..Opts::default()
+            };
+
+            let error = validate(&mut options, 0).expect_err("alignment should be rejected");
+            assert!(
+                error
+                    .to_string()
+                    .contains("list icon vertical alignment must be between -100 and 100")
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_list_layout_ignores_unused_vertical_alignment() {
+        let mut options = Opts {
+            desktop_icon_mode: DesktopIconMode::Preview,
+            desktop_icon_list_vertical_align_percent: 101,
+            ..Opts::default()
+        };
+
+        assert!(validate(&mut options, 0).is_ok());
     }
 
     #[test]

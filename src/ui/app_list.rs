@@ -1,3 +1,5 @@
+//! Launcher result-list layout, backgrounds, markers, and terminal images.
+
 use super::app_ui::AppIcons;
 use crate::cli::Opts;
 use crate::core::state::State;
@@ -6,9 +8,8 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Block, BorderType, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph,
-};
+use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ListAreas {
@@ -18,9 +19,15 @@ struct ListAreas {
 }
 
 pub(crate) fn launcher_visible_rows(total_height: u16, cli: &Opts) -> usize {
-    let (_, _, apps_area) =
-        super::app_ui::launcher_panel_areas(Rect::new(0, 0, 1, total_height), cli);
-    visible_rows(apps_area.height.saturating_sub(2), cli)
+    visible_rows(
+        launcher_list_content_area(Rect::new(0, 0, 1, total_height), cli).height,
+        cli,
+    )
+}
+
+pub(crate) fn launcher_list_content_area(size: Rect, cli: &Opts) -> Rect {
+    let (_, _, items_area) = super::app_ui::launcher_panel_areas(size, cli);
+    apps_block(cli).inner(items_area)
 }
 
 fn visible_rows(content_height: u16, cli: &Opts) -> usize {
@@ -36,12 +43,9 @@ pub(crate) fn app_row_height(cli: &Opts) -> u16 {
 }
 
 pub(crate) fn launcher_list_icon_area(size: Rect, cli: &Opts) -> Rect {
-    let (_, _, apps_area) = super::app_ui::launcher_panel_areas(size, cli);
-    let inner = apps_area.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
-    let Some(icon_strip) = list_areas(inner, cli).icon else {
+    let inner = launcher_list_content_area(size, cli);
+    let content = list_content_area(inner, cli);
+    let Some(icon_strip) = list_areas(content, cli).icon else {
         return Rect::default();
     };
     Rect::new(0, 0, icon_strip.width, app_row_height(cli))
@@ -54,20 +58,10 @@ pub(super) fn render(
     area: Rect,
     app_icons: Option<&mut AppIcons<'_>>,
 ) -> Result<bool> {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(cli.apps_border_color))
-        .title(Span::styled(
-            " Apps ",
-            Style::default().fg(cli.header_title_color),
-        ))
-        .border_type(if cli.rounded_borders {
-            BorderType::Rounded
-        } else {
-            BorderType::Plain
-        });
+    let block = apps_block(cli);
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    let content = list_content_area(inner, cli);
 
     let row_height = app_row_height(cli);
     let max_visible = visible_rows(inner.height, cli);
@@ -77,13 +71,21 @@ pub(super) fn render(
         .skip(state.scroll_offset)
         .take(max_visible)
         .collect::<Vec<_>>();
-    let areas = list_areas(inner, cli);
+    let areas = list_areas(content, cli);
+    let selected_row = state.selected.and_then(|selected| {
+        (selected >= state.scroll_offset && selected < state.scroll_offset + max_visible)
+            .then_some(selected - state.scroll_offset)
+    });
 
     let items = visible_apps
         .iter()
-        .map(|app| {
+        .enumerate()
+        .map(|(row, app)| {
             let mut spans = Vec::new();
-            if app.pinned {
+            if areas.selection.is_none() {
+                spans.extend(selection_marker_spans(cli, selected_row == Some(row)));
+            }
+            if app.pinned && cli.show_pin_icons {
                 spans.push(Span::styled(
                     &cli.pin_icon,
                     Style::default().fg(cli.pin_color),
@@ -92,7 +94,7 @@ pub(super) fn render(
             }
             spans.push(Span::styled(
                 &app.name,
-                Style::default().fg(cli.apps_text_color),
+                Style::default().fg(cli.items_text_color),
             ));
 
             let mut lines = vec![Line::from(spans)];
@@ -103,29 +105,31 @@ pub(super) fn render(
     let highlight_style = Style::default()
         .fg(cli.highlight_color)
         .add_modifier(Modifier::BOLD);
-    let arrow_before_icon = areas.selection.is_some();
     let list = List::new(items)
         .highlight_style(highlight_style)
-        .highlight_symbol(if arrow_before_icon { "" } else { "> " })
-        .highlight_spacing(if arrow_before_icon {
-            HighlightSpacing::Never
-        } else {
-            HighlightSpacing::Always
-        });
+        .highlight_symbol("");
     let mut list_state = ListState::default();
-    if let Some(selected) = state.selected
-        && selected >= state.scroll_offset
-        && selected < state.scroll_offset + max_visible
-    {
-        list_state.select(Some(selected - state.scroll_offset));
+    if let Some(selected) = selected_row {
+        list_state.select(Some(selected));
+    }
+    if let Some(selected) = list_state.selected() {
+        let y = inner.y + selected as u16 * row_height;
+        let height = row_height.min(inner.y + inner.height - y);
+        super::render_selection_background(
+            frame,
+            Rect::new(inner.x, y, inner.width, height),
+            cli.items_background_color,
+            cli.items_selection_background_color,
+            cli.items_selection_rounded,
+        );
     }
     frame.render_stateful_widget(list, areas.text, &mut list_state);
 
     if let (Some(selected), Some(selection_area)) = (list_state.selected(), areas.selection) {
-        let y = selection_area.y + selected as u16 * row_height;
+        let marker_area = selection_marker_area(selection_area, selected, row_height);
         frame.render_widget(
-            Paragraph::new("> ").style(highlight_style),
-            Rect::new(selection_area.x, y, selection_area.width, 1),
+            Paragraph::new(format!("{} ", cli.selection_marker)).style(highlight_style),
+            marker_area,
         );
     }
 
@@ -138,19 +142,23 @@ pub(super) fn render(
             if icons.failed_list_icons.contains(icon) {
                 continue;
             }
-            let Some(key) = icons.list_keys.get(icon) else {
+            let Some(placement) = icons.list_icons.get(icon) else {
                 continue;
             };
-            if !icons.image_manager.is_cached(key) {
+            if !icons.image_manager.is_cached(&placement.key) {
                 continue;
             }
-            let icon_area = Rect::new(
+            let item_area = Rect::new(
                 icon_strip.x,
                 icon_strip.y + row as u16 * row_height,
                 icon_strip.width,
                 row_height,
             );
-            if !icons.image_manager.render_cached(frame, key, icon_area)? {
+            let icon_area = overflow_icon_area(item_area, placement.top_overflow_rows);
+            if !icons
+                .image_manager
+                .render_cached(frame, &placement.key, icon_area)?
+            {
                 icons.failed_list_icons.insert(icon.clone());
                 render_failed = true;
             }
@@ -158,6 +166,55 @@ pub(super) fn render(
     }
 
     Ok(render_failed)
+}
+
+fn overflow_icon_area(item_area: Rect, top_overflow_rows: u16) -> Rect {
+    Rect::new(
+        item_area.x,
+        item_area.y.saturating_sub(top_overflow_rows),
+        item_area.width,
+        item_area.height.saturating_add(top_overflow_rows),
+    )
+}
+
+fn selection_marker_spans(cli: &Opts, selected: bool) -> Vec<Span<'_>> {
+    let width = marker_gutter_width(cli);
+    if width == 0 {
+        return Vec::new();
+    }
+    if selected {
+        vec![Span::raw(format!("{} ", cli.selection_marker))]
+    } else {
+        vec![Span::raw(" ".repeat(usize::from(width)))]
+    }
+}
+
+fn marker_gutter_width(cli: &Opts) -> u16 {
+    if !cli.show_selection_marker || cli.selection_marker.is_empty() {
+        return 0;
+    }
+    let width =
+        UnicodeWidthStr::width(cli.selection_marker.as_str()).min(usize::from(u16::MAX - 1));
+    width as u16 + 1
+}
+
+fn selection_marker_area(area: Rect, selected: usize, row_height: u16) -> Rect {
+    Rect::new(area.x, area.y + selected as u16 * row_height, area.width, 1)
+}
+
+fn apps_block(cli: &Opts) -> Block<'static> {
+    super::panel_block(
+        " Apps ",
+        super::PanelTheme {
+            show_border: cli.show_items_border,
+            show_title: cli.show_panel_titles,
+            bold_title: false,
+            rounded_border: cli.rounded_borders,
+            border_color: cli.items_border_color,
+            background_color: cli.items_background_color,
+            title_color: cli.header_title_color,
+        },
+    )
 }
 
 fn list_areas(area: Rect, cli: &Opts) -> ListAreas {
@@ -169,31 +226,60 @@ fn list_areas(area: Rect, cli: &Opts) -> ListAreas {
         };
     }
 
-    // Preserve two columns for the selection marker and one for visible label text.
-    let icon_width = cli.desktop_icon_list_width.min(area.width - 3);
+    let marker_width = marker_gutter_width(cli);
+    let fixed_width = marker_width + 1;
+    if area.width <= fixed_width {
+        return ListAreas {
+            text: area,
+            icon: None,
+            selection: None,
+        };
+    }
+    let icon_width = cli.desktop_icon_list_width.min(area.width - fixed_width);
+    let gap = cli
+        .desktop_icon_list_gap
+        .min(area.width.saturating_sub(icon_width + fixed_width));
     match cli.desktop_icon_position {
-        super::HorizontalPosition::Left if cli.desktop_icon_arrow_before => ListAreas {
-            selection: Some(Rect::new(area.x, area.y, 2, area.height)),
-            icon: Some(Rect::new(area.x + 2, area.y, icon_width, area.height)),
-            text: Rect::new(
-                area.x + 2 + icon_width,
-                area.y,
-                area.width - 2 - icon_width,
-                area.height,
-            ),
-        },
+        super::HorizontalPosition::Left if cli.desktop_icon_arrow_before && marker_width > 0 => {
+            ListAreas {
+                selection: Some(Rect::new(area.x, area.y, marker_width, area.height)),
+                icon: Some(Rect::new(
+                    area.x + marker_width,
+                    area.y,
+                    icon_width,
+                    area.height,
+                )),
+                text: Rect::new(
+                    area.x + marker_width + icon_width + gap,
+                    area.y,
+                    area.width - marker_width - icon_width - gap,
+                    area.height,
+                ),
+            }
+        }
         super::HorizontalPosition::Left => ListAreas {
             text: Rect::new(
-                area.x + icon_width,
+                area.x + icon_width + gap,
                 area.y,
-                area.width - icon_width,
+                area.width - icon_width - gap,
                 area.height,
             ),
             icon: Some(Rect::new(area.x, area.y, icon_width, area.height)),
             selection: None,
         },
         super::HorizontalPosition::Right => ListAreas {
-            text: Rect::new(area.x, area.y, area.width - icon_width, area.height),
+            text: Rect::new(area.x, area.y, area.width - icon_width - gap, area.height),
+            icon: Some(Rect::new(
+                area.x + area.width - icon_width,
+                area.y,
+                icon_width,
+                area.height,
+            )),
+            selection: None,
+        },
+        // Center is a title-preview placement. Keep list icons on the default side.
+        super::HorizontalPosition::Center => ListAreas {
+            text: Rect::new(area.x, area.y, area.width - icon_width - gap, area.height),
             icon: Some(Rect::new(
                 area.x + area.width - icon_width,
                 area.y,
@@ -205,127 +291,9 @@ fn list_areas(area: Rect, cli: &Opts) -> ListAreas {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{launcher_list_icon_area, launcher_visible_rows, list_areas};
-    use crate::cli::{DesktopIconMode, Opts};
-    use crate::ui::{HorizontalPosition, PanelPosition};
-    use ratatui::layout::Rect;
-
-    #[test]
-    fn list_icons_reduce_visible_apps_by_configured_row_height() {
-        let cli = Opts {
-            desktop_icon_mode: DesktopIconMode::List,
-            desktop_icon_list_height: 2,
-            title_panel_height_percent: 25,
-            input_panel_height: 3,
-            ..Opts::default()
-        };
-
-        assert_eq!(launcher_visible_rows(40, &cli), 12);
-    }
-
-    #[test]
-    fn visible_rows_saturates_when_panel_sizes_overflow() {
-        let cli = Opts {
-            title_panel_height_percent: u16::MAX,
-            input_panel_height: u16::MAX,
-            ..Opts::default()
-        };
-
-        assert_eq!(launcher_visible_rows(u16::MAX, &cli), 0);
-    }
-
-    #[test]
-    fn middle_title_position_uses_the_actual_apps_pane_height() {
-        let cli = Opts {
-            desktop_icon_mode: DesktopIconMode::List,
-            desktop_icon_list_height: 2,
-            title_panel_position: Some(PanelPosition::Middle),
-            title_panel_height_percent: 25,
-            input_panel_height: 3,
-            ..Opts::default()
-        };
-
-        assert_eq!(launcher_visible_rows(40, &cli), 6);
-    }
-
-    #[test]
-    fn list_icons_can_reserve_the_right_side() {
-        let cli = Opts {
-            desktop_icon_mode: DesktopIconMode::Both,
-            desktop_icon_position: HorizontalPosition::Right,
-            desktop_icon_list_width: 4,
-            ..Opts::default()
-        };
-
-        let areas = list_areas(Rect::new(10, 3, 30, 8), &cli);
-
-        assert_eq!(areas.text, Rect::new(10, 3, 26, 8));
-        assert_eq!(areas.icon, Some(Rect::new(36, 3, 4, 8)));
-        assert_eq!(areas.selection, None);
-    }
-
-    #[test]
-    fn list_icons_can_reserve_the_left_side() {
-        let cli = Opts {
-            desktop_icon_mode: DesktopIconMode::List,
-            desktop_icon_position: HorizontalPosition::Left,
-            desktop_icon_list_width: 5,
-            ..Opts::default()
-        };
-
-        let areas = list_areas(Rect::new(2, 4, 20, 6), &cli);
-
-        assert_eq!(areas.text, Rect::new(7, 4, 15, 6));
-        assert_eq!(areas.icon, Some(Rect::new(2, 4, 5, 6)));
-        assert_eq!(areas.selection, None);
-    }
-
-    #[test]
-    fn selection_arrow_can_be_reserved_before_a_left_icon() {
-        let cli = Opts {
-            desktop_icon_mode: DesktopIconMode::List,
-            desktop_icon_position: HorizontalPosition::Left,
-            desktop_icon_list_width: 5,
-            desktop_icon_arrow_before: true,
-            ..Opts::default()
-        };
-
-        let areas = list_areas(Rect::new(2, 4, 20, 6), &cli);
-
-        assert_eq!(areas.selection, Some(Rect::new(2, 4, 2, 6)));
-        assert_eq!(areas.icon, Some(Rect::new(4, 4, 5, 6)));
-        assert_eq!(areas.text, Rect::new(9, 4, 13, 6));
-    }
-
-    #[test]
-    fn narrow_list_keeps_selection_and_label_space() {
-        let cli = Opts {
-            desktop_icon_mode: DesktopIconMode::List,
-            desktop_icon_position: HorizontalPosition::Left,
-            desktop_icon_list_width: 16,
-            ..Opts::default()
-        };
-
-        let areas = list_areas(Rect::new(2, 4, 4, 6), &cli);
-
-        assert_eq!(areas.icon, Some(Rect::new(2, 4, 1, 6)));
-        assert_eq!(areas.text, Rect::new(3, 4, 3, 6));
-    }
-
-    #[test]
-    fn list_worker_area_matches_each_rendered_icon_slot() {
-        let cli = Opts {
-            desktop_icon_mode: DesktopIconMode::List,
-            desktop_icon_list_width: 5,
-            desktop_icon_list_height: 2,
-            ..Opts::default()
-        };
-
-        assert_eq!(
-            launcher_list_icon_area(Rect::new(0, 0, 100, 40), &cli),
-            Rect::new(0, 0, 5, 2)
-        );
-    }
+fn list_content_area(area: Rect, cli: &Opts) -> Rect {
+    super::selection_content_area(area, cli.items_selection_rounded)
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,3 +1,5 @@
+//! Launcher keyboard and mouse event handling against rendered panel geometry.
+
 use crate::cli::Opts;
 use crate::core::hidden_entries::{HiddenEntryStore, NewHiddenEntry};
 use crate::core::ranking::current_unix_seconds;
@@ -246,20 +248,14 @@ fn refresh_info(state: &mut State, cli: &Opts) {
 }
 
 fn list_metrics(total_height: u16, cli: &Opts) -> ListMetrics {
-    let title_height =
-        crate::ui::effective_title_height(total_height, cli.title_panel_height_percent);
-    let title_panel_position = cli
-        .title_panel_position
-        .unwrap_or(crate::ui::PanelPosition::Top);
-
-    let apps_panel_start = match title_panel_position {
-        crate::ui::PanelPosition::Top => title_height,
-        crate::ui::PanelPosition::Middle | crate::ui::PanelPosition::Bottom => 0,
-    };
+    let content = crate::ui::launcher_list_content_area(
+        ratatui::layout::Rect::new(0, 0, 1, total_height),
+        cli,
+    );
 
     ListMetrics {
-        list_content_start: apps_panel_start.saturating_add(1),
-        max_visible: crate::ui::launcher_visible_rows(total_height, cli),
+        list_content_start: content.y,
+        max_visible: usize::from(content.height / crate::ui::app_row_height(cli)),
         row_height: crate::ui::app_row_height(cli),
     }
 }
@@ -295,5 +291,28 @@ impl ListMetrics {
         if index < state.shown.len() {
             state.selected = Some(index);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::list_metrics;
+    use crate::cli::Opts;
+
+    #[test]
+    fn borderless_mouse_metrics_start_on_the_first_visible_row() {
+        let bordered = list_metrics(40, &Opts::default());
+        let borderless = list_metrics(
+            40,
+            &Opts {
+                show_items_border: false,
+                show_panel_titles: false,
+                ..Opts::default()
+            },
+        );
+
+        assert_eq!(bordered.list_content_start, 13);
+        assert_eq!(borderless.list_content_start, 12);
+        assert_eq!(borderless.max_visible, bordered.max_visible + 2);
     }
 }

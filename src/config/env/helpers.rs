@@ -9,7 +9,7 @@ pub(super) const RANKING_MODE_EXPECTED: &str = "'frecency', 'recency', or 'frequ
 pub(super) const PINNED_ORDER_EXPECTED: &str =
     "'ranking', 'alphabetical', 'oldest', 'oldest_pinned', 'newest', or 'newest_pinned'";
 pub(super) const PANEL_POSITION_EXPECTED: &str = "'top', 'middle', or 'bottom'";
-pub(super) const HORIZONTAL_POSITION_EXPECTED: &str = "'left' or 'right'";
+pub(super) const HORIZONTAL_POSITION_EXPECTED: &str = "'left', 'center', or 'right'";
 pub(super) const DESKTOP_ICON_MODE_EXPECTED: &str = "'none', 'preview', 'list', or 'both'";
 pub(super) const LAUNCH_PREFIX_EXPECTED: &str = "a shell-words command prefix";
 

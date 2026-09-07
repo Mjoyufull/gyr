@@ -1,3 +1,5 @@
+//! Cclip mouse selection mapped to the visible history panel.
+
 use super::selection::copy_selected_and_exit_at;
 use super::{EventContext, EventOutcome, LoopControl};
 use crate::ui::TagMode;
@@ -9,10 +11,9 @@ pub(super) fn handle_mouse_event(
     mouse_event: MouseEvent,
 ) -> Result<EventOutcome> {
     let mouse_row = mouse_event.row;
-    let (items_panel_start, items_panel_height) =
-        ctx.options.items_panel_bounds(ctx.terminal.size()?.height);
-    let items_content_start = items_panel_start + 1;
-    let max_visible_rows = items_panel_height.saturating_sub(2);
+    let (items_content_start, max_visible_rows) = ctx
+        .options
+        .items_content_bounds(ctx.terminal.size()?.height);
     let items_content_end = items_content_start + max_visible_rows;
 
     let update_selection_for_mouse_pos = |ui: &mut crate::ui::DmenuUI<'_>| {

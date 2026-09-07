@@ -1,7 +1,7 @@
 use crate::cli::Opts;
 use crate::core::state::State;
 use crate::desktop::IconResolver;
-use crate::ui::{AppIcons, GraphicsAdapter, ImageManager};
+use crate::ui::{AppIcons, GraphicsAdapter, ImageManager, ListIconPlacement};
 use ratatui::layout::Rect;
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::Protocol;
@@ -25,7 +25,7 @@ pub(super) struct IconRuntime {
     preview_area: Rect,
     list_signature: Vec<Option<String>>,
     list_area: Rect,
-    list_keys: HashMap<String, String>,
+    list_icons: HashMap<String, ListIconPlacement>,
     failed_list_icons: HashSet<String>,
     list_inflight: HashSet<String>,
     list_attempted: HashSet<String>,
@@ -67,10 +67,11 @@ pub(super) struct PreparedIcon {
     key: String,
     protocol: Box<Protocol>,
     decoded_bytes: u64,
+    top_overflow_rows: u16,
 }
 
 impl IconRuntime {
-    pub(super) fn new(cli: &Opts) -> Self {
+    pub(super) fn new(cli: &Opts, db: std::sync::Arc<redb::Database>) -> Self {
         let (result_tx, result_rx) = mpsc::unbounded_channel();
         let (request_tx, request_rx) = mpsc::unbounded_channel();
         let preview_enabled = cli.desktop_icon_mode.shows_preview();
@@ -81,15 +82,17 @@ impl IconRuntime {
         } else {
             fallback_adapter.picker()
         };
-        let resolver = IconResolver::from_environment(
+        let resolver = IconResolver::from_environment_with_cache(
             cli.desktop_icon_theme.as_deref(),
             cli.desktop_icon_size,
+            db,
         );
         let worker = spawn_worker(
             resolver,
             picker.clone(),
             cli.desktop_icon_horizontal_align_percent,
-            cli.desktop_icon_vertical_align_percent,
+            cli.desktop_icon_vertical_align_percent.min(100) as i16,
+            cli.desktop_icon_list_vertical_align_percent,
             request_rx,
             result_tx,
         );
@@ -106,7 +109,7 @@ impl IconRuntime {
             preview_area: Rect::default(),
             list_signature: Vec::new(),
             list_area: Rect::default(),
-            list_keys: HashMap::new(),
+            list_icons: HashMap::new(),
             failed_list_icons: HashSet::new(),
             list_inflight: HashSet::new(),
             list_attempted: HashSet::new(),
@@ -231,15 +234,15 @@ impl IconRuntime {
             }
             self.list_area = area;
             self.list_signature = signature;
-            self.list_keys.clear();
+            self.list_icons.clear();
             return Vec::new();
         }
         let signature_changed = area_changed || self.list_signature != signature;
         let all_ready = signature.iter().flatten().all(|icon| {
             let cached = self
-                .list_keys
+                .list_icons
                 .get(icon)
-                .is_some_and(|key| self.image_manager.is_cached(key));
+                .is_some_and(|placement| self.image_manager.is_cached(&placement.key));
             !should_queue_list_icon(
                 self.failed_list_icons.contains(icon),
                 self.list_inflight.contains(icon),
@@ -259,7 +262,7 @@ impl IconRuntime {
                 &mut self.list_attempted,
             );
             if area_changed {
-                self.list_keys.clear();
+                self.list_icons.clear();
                 self.list_area = area;
             }
             self.list_signature = signature;
@@ -275,9 +278,9 @@ impl IconRuntime {
             .filter(|icon| unique.insert((*icon).clone()))
             .filter(|icon| {
                 let cached = self
-                    .list_keys
+                    .list_icons
                     .get(*icon)
-                    .is_some_and(|key| self.image_manager.is_cached(key));
+                    .is_some_and(|placement| self.image_manager.is_cached(&placement.key));
                 should_queue_list_icon(
                     self.failed_list_icons.contains(*icon),
                     self.list_inflight.contains(*icon),
@@ -355,7 +358,13 @@ impl IconRuntime {
             *prepared.protocol,
             prepared.decoded_bytes,
         );
-        self.list_keys.insert(icon, prepared.key);
+        self.list_icons.insert(
+            icon,
+            ListIconPlacement {
+                key: prepared.key,
+                top_overflow_rows: prepared.top_overflow_rows,
+            },
+        );
     }
 
     pub(super) fn render_state(&mut self) -> Option<AppIcons<'_>> {
@@ -369,7 +378,7 @@ impl IconRuntime {
         Some(AppIcons {
             image_manager: &mut self.image_manager,
             preview_key,
-            list_keys: &self.list_keys,
+            list_icons: &self.list_icons,
             failed_list_icons: &mut self.failed_list_icons,
         })
     }
@@ -437,7 +446,8 @@ fn spawn_worker(
     mut resolver: IconResolver,
     picker: Picker,
     horizontal_align: u16,
-    vertical_align: u16,
+    preview_vertical_align: i16,
+    list_vertical_align: i16,
     mut request_rx: mpsc::UnboundedReceiver<WorkRequest>,
     result_tx: mpsc::UnboundedSender<IconResult>,
 ) -> JoinHandle<()> {
@@ -455,7 +465,7 @@ fn spawn_worker(
                         &result_tx,
                         preview,
                         horizontal_align,
-                        vertical_align,
+                        preview_vertical_align,
                     ) {
                         return;
                     }
@@ -471,7 +481,7 @@ fn spawn_worker(
                             "desktop-list",
                             request.list_area,
                             horizontal_align,
-                            vertical_align,
+                            list_vertical_align,
                         );
                         if result_tx
                             .send(IconResult::List {
@@ -488,15 +498,18 @@ fn spawn_worker(
                 }
                 let batch = (0..4)
                     .filter_map(|_| request.list_icons.pop_front())
-                    .filter_map(|icon| match resolver.resolve(&icon) {
-                        Some(path) => Some((icon, path)),
-                        None => {
-                            let _ = result_tx.send(IconResult::List {
-                                generation: request.list_generation,
-                                icon,
-                                prepared: Ok(None),
-                            });
-                            None
+                    .filter_map(|icon| {
+                        let size = icon_lookup_size(&resolver, &picker, request.list_area);
+                        match resolver.resolve_at_size(&icon, size) {
+                            Some(path) => Some((icon, path)),
+                            None => {
+                                let _ = result_tx.send(IconResult::List {
+                                    generation: request.list_generation,
+                                    icon,
+                                    prepared: Ok(None),
+                                });
+                                None
+                            }
                         }
                     })
                     .collect::<Vec<_>>();
@@ -512,7 +525,7 @@ fn spawn_worker(
                             "desktop-list",
                             request.list_area,
                             horizontal_align,
-                            vertical_align,
+                            list_vertical_align,
                         )
                         .map(Some);
                         (icon, prepared)
@@ -566,7 +579,7 @@ fn prepare_preview(
     result_tx: &mpsc::UnboundedSender<IconResult>,
     preview: IconRequest,
     horizontal_align: u16,
-    vertical_align: u16,
+    vertical_align: i16,
 ) -> bool {
     let prepared = prepare_icon(
         resolver,
@@ -592,9 +605,10 @@ fn prepare_icon(
     namespace: &str,
     area: Rect,
     horizontal_align: u16,
-    vertical_align: u16,
+    vertical_align: i16,
 ) -> Result<Option<PreparedIcon>, String> {
-    let Some(path) = resolver.resolve(icon) else {
+    let lookup_size = icon_lookup_size(resolver, &picker, area);
+    let Some(path) = resolver.resolve_at_size(icon, lookup_size) else {
         return Ok(None);
     };
     prepare_resolved_icon(
@@ -608,13 +622,21 @@ fn prepare_icon(
     .map(Some)
 }
 
+fn icon_lookup_size(resolver: &IconResolver, picker: &Picker, area: Rect) -> u16 {
+    let (font_width, font_height) = picker.font_size();
+    let width = u32::from(area.width).saturating_mul(u32::from(font_width));
+    let height = u32::from(area.height).saturating_mul(u32::from(font_height));
+    let rendered_size = width.min(height).min(u32::from(u16::MAX)) as u16;
+    rendered_size.max(resolver.minimum_size())
+}
+
 fn prepare_resolved_icon(
     picker: Picker,
     path: PathBuf,
     namespace: &str,
     area: Rect,
     horizontal_align: u16,
-    vertical_align: u16,
+    vertical_align: i16,
 ) -> Result<PreparedIcon, String> {
     let key = format!(
         "{namespace}:{}x{}:{horizontal_align}x{vertical_align}:{}",
@@ -622,7 +644,7 @@ fn prepare_resolved_icon(
         area.height,
         path.to_string_lossy()
     );
-    let (protocol, decoded_bytes) = ImageManager::prepare_fixed_image_path_with_weight(
+    let prepared = ImageManager::prepare_fixed_image_path_with_weight(
         picker,
         &path,
         area,
@@ -632,8 +654,9 @@ fn prepare_resolved_icon(
     .map_err(|error| format!("Failed to load desktop icon {}: {error}", path.display()))?;
     Ok(PreparedIcon {
         key,
-        protocol: Box::new(protocol),
-        decoded_bytes,
+        protocol: Box::new(prepared.protocol),
+        decoded_bytes: prepared.retained_bytes,
+        top_overflow_rows: prepared.top_overflow_rows,
     })
 }
 

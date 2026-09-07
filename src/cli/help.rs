@@ -38,10 +38,12 @@ Usage:
 │  ├─ --stdout                     Print filtered desktop entries to stdout in json form
 │  ├─ --list-executables-in-path   Include executables from $PATH in launcher mode
 │  ├─ --desktop-icons[=MODE]       Use preview, list, both, or none (default: preview)
-│  ├─ --icon-position <SIDE>       Place title and list icons on the left or right
+│  ├─ --icon-position <POSITION>   Place the preview left, center, or right
 │  ├─ --icon-arrow-before          Put the selection arrow before a left list icon
+│  ├─ --icon-list-gap <N>          Add 0-16 columns between each icon and label
+│  ├─ --icon-list-vertical-align <N>  Offset artwork; negatives overflow upward (-100 to 100)
 │  ├─ --icon-horizontal-align <N>  Align icon content from left (0) to right (100)
-│  ├─ --icon-vertical-align <N>    Align icon content from top (0) to bottom (100)
+│  ├─ --icon-vertical-align <N>    Align preview artwork top (0) to bottom (100)
 │  ├─ --icon-theme <THEME>         Override automatic desktop icon-theme detection
 │  ├─ --match-mode <MODE>          Choose fuzzy or exact matching
 │  └─ --prefix-depth <N>           Tune how long prefix matches outrank fuzzy matches
@@ -100,14 +102,16 @@ Usage:
 │  ├─ --hide-before-typing         Keep the list hidden until you type the first character
 │  ├─ --list-executables-in-path   Include executables from $PATH in launcher mode
 │  ├─ --desktop-icons[=MODE]       Use preview, list, both, or none (default: preview)
-│  ├─ --icon-position <SIDE>       Put title and list icons on the left or right
+│  ├─ --icon-position <POSITION>   Put the preview left, center, or right
 │  ├─ --icon-preview-width <N>     Give the icon 10-90 percent of the title panel
 │  ├─ --icon-list-width <N>        Reserve 1-16 terminal columns for each list icon
 │  ├─ --icon-list-height <N>       Give each icon/list row 1-8 terminal rows
+│  ├─ --icon-list-gap <N>          Add 0-16 columns between each icon and label
+│  ├─ --icon-list-vertical-align <N>  Offset artwork; negatives overflow upward (-100 to 100)
 │  ├─ --icon-arrow-before          Put the selection arrow before a left list icon
 │  ├─ --icon-size <PX>             Request a themed icon size from 1-4096 pixels
 │  ├─ --icon-horizontal-align <N>  Align icon content from left (0) to right (100)
-│  ├─ --icon-vertical-align <N>    Align icon content from top (0) to bottom (100)
+│  ├─ --icon-vertical-align <N>    Align preview artwork top (0) to bottom (100)
 │  ├─ --icon-theme <THEME>         Override automatic desktop icon-theme detection
 │  ├─ --match-mode <MODE>          Choose fuzzy or exact matching (default: fuzzy)
 │  └─ --prefix-depth <N>           Set how long prefix matches outrank fuzzy matches (default: 3)

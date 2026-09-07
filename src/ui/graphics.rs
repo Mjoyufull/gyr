@@ -55,6 +55,12 @@ enum CachedProtocol {
     Resizable(StatefulProtocol),
 }
 
+pub(crate) struct PreparedFixedImage {
+    pub(crate) protocol: Protocol,
+    pub(crate) retained_bytes: u64,
+    pub(crate) top_overflow_rows: u16,
+}
+
 impl ImageManager {
     /// Initialize the image manager with the picker chosen by the caller.
     pub fn new(picker: Picker) -> Self {
@@ -121,7 +127,7 @@ impl ImageManager {
     /// Read and prepare an image file from a blocking worker.
     #[cfg(test)]
     pub(crate) fn prepare_image_path(picker: Picker, path: &Path) -> Result<StatefulProtocol> {
-        let (image, _) = read_icon_image(path)?;
+        let (image, _) = read_icon_image(path, MAX_SVG_DIMENSION as u32)?;
         Ok(picker.new_resize_protocol(image))
     }
 
@@ -131,26 +137,34 @@ impl ImageManager {
         path: &Path,
         area: Rect,
         horizontal_align: u16,
-        vertical_align: u16,
-    ) -> Result<(Protocol, u64)> {
-        let (image, _) = read_icon_image(path)?;
+        vertical_align: i16,
+    ) -> Result<PreparedFixedImage> {
         let (font_width, font_height) = picker.font_size();
         let pixel_width = u32::from(area.width).saturating_mul(u32::from(font_width));
         let pixel_height = u32::from(area.height).saturating_mul(u32::from(font_height));
-        let image = normalize_desktop_icon(
+        let svg_dimension = pixel_width.max(pixel_height).max(1);
+        let (image, _) = read_icon_image(path, svg_dimension)?;
+        let normalized = normalize_desktop_icon(
             image,
             pixel_width,
             pixel_height,
             horizontal_align,
             vertical_align,
+            font_height,
         );
+        let protocol_height = area.height.saturating_add(normalized.top_overflow_rows);
+        let protocol_area = Rect::new(area.x, area.y, area.width, protocol_height);
         let retained_bytes = u64::from(area.width)
             .saturating_mul(u64::from(font_width))
-            .saturating_mul(u64::from(area.height))
+            .saturating_mul(u64::from(protocol_height))
             .saturating_mul(u64::from(font_height))
             .saturating_mul(4);
-        let protocol = picker.new_protocol(image, area, Resize::Scale(None))?;
-        Ok((protocol, retained_bytes))
+        let protocol = picker.new_protocol(normalized.image, protocol_area, Resize::Scale(None))?;
+        Ok(PreparedFixedImage {
+            protocol,
+            retained_bytes,
+            top_overflow_rows: normalized.top_overflow_rows,
+        })
     }
 
     /// Insert a fixed-size protocol prepared by a desktop-icon worker.
@@ -260,25 +274,27 @@ impl ImageManager {
     }
 
     /// Render the current image into the given area
-    pub fn render(&mut self, f: &mut Frame, area: Rect) -> Result<()> {
-        if let Some(rowid) = &self.current_rowid
-            && let Some(protocol) = self.cache.get_mut(rowid)
-        {
-            match protocol {
-                CachedProtocol::Fixed(protocol) => f.render_widget(Image::new(protocol), area),
-                CachedProtocol::Resizable(protocol) => {
-                    f.render_stateful_widget(
-                        StatefulImage::default().resize(Resize::Fit(None)),
-                        area,
-                        protocol,
-                    );
-                    if let Some(Err(error)) = protocol.last_encoding_result() {
-                        return Err(eyre!("Image encoding failed: {error}"));
-                    }
+    pub fn render(&mut self, f: &mut Frame, area: Rect) -> Result<bool> {
+        let Some(rowid) = &self.current_rowid else {
+            return Ok(false);
+        };
+        let Some(protocol) = self.cache.get_mut(rowid) else {
+            return Ok(false);
+        };
+        match protocol {
+            CachedProtocol::Fixed(protocol) => f.render_widget(Image::new(protocol), area),
+            CachedProtocol::Resizable(protocol) => {
+                f.render_stateful_widget(
+                    StatefulImage::default().resize(Resize::Fit(None)),
+                    area,
+                    protocol,
+                );
+                if let Some(Err(error)) = protocol.last_encoding_result() {
+                    return Err(eyre!("Image encoding failed: {error}"));
                 }
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Render a cached image without changing the manager's current selection.
@@ -345,13 +361,19 @@ impl ImageManager {
     }
 }
 
+struct NormalizedDesktopIcon {
+    image: image::DynamicImage,
+    top_overflow_rows: u16,
+}
+
 fn normalize_desktop_icon(
     image: image::DynamicImage,
     target_width: u32,
     target_height: u32,
     horizontal_align: u16,
-    vertical_align: u16,
-) -> image::DynamicImage {
+    vertical_align: i16,
+    font_height: u16,
+) -> NormalizedDesktopIcon {
     let source = image.into_rgba8();
     let mut bounds = None::<(u32, u32, u32, u32)>;
     for (x, y, pixel) in source.enumerate_pixels() {
@@ -363,9 +385,11 @@ fn normalize_desktop_icon(
         }));
     }
 
-    let mut canvas = image::RgbaImage::new(target_width.max(1), target_height.max(1));
     let Some((left, top, right, bottom)) = bounds else {
-        return image::DynamicImage::ImageRgba8(canvas);
+        return NormalizedDesktopIcon {
+            image: image::DynamicImage::new_rgba8(target_width.max(1), target_height.max(1)),
+            top_overflow_rows: 0,
+        };
     };
     let source_width = right - left + 1;
     let source_height = bottom - top + 1;
@@ -392,21 +416,36 @@ fn normalize_desktop_icon(
         &cropped,
         width,
         height,
-        image::imageops::FilterType::Triangle,
+        image::imageops::FilterType::CatmullRom,
     );
     let x = target_width
         .saturating_sub(width)
         .saturating_mul(u32::from(horizontal_align.min(100)))
         / 100;
-    let y = target_height
-        .saturating_sub(height)
-        .saturating_mul(u32::from(vertical_align.min(100)))
+    let y = i64::from(target_height.saturating_sub(height))
+        .saturating_mul(i64::from(vertical_align.clamp(-100, 100)))
         / 100;
-    image::imageops::overlay(&mut canvas, &resized, i64::from(x), i64::from(y));
-    image::DynamicImage::ImageRgba8(canvas)
+    let font_height = u32::from(font_height.max(1));
+    let top_overflow_pixels = y.unsigned_abs().min(u64::from(u32::MAX)) as u32;
+    let top_overflow_rows = if y < 0 {
+        top_overflow_pixels
+            .div_ceil(font_height)
+            .min(u32::from(u16::MAX)) as u16
+    } else {
+        0
+    };
+    let top_padding = u32::from(top_overflow_rows).saturating_mul(font_height);
+    let canvas_height = target_height.saturating_add(top_padding).max(1);
+    let mut canvas = image::RgbaImage::new(target_width.max(1), canvas_height);
+    let canvas_y = i64::from(top_padding).saturating_add(y);
+    image::imageops::overlay(&mut canvas, &resized, i64::from(x), canvas_y);
+    NormalizedDesktopIcon {
+        image: image::DynamicImage::ImageRgba8(canvas),
+        top_overflow_rows,
+    }
 }
 
-fn read_icon_image(path: &Path) -> Result<(image::DynamicImage, u64)> {
+fn read_icon_image(path: &Path, svg_dimension: u32) -> Result<(image::DynamicImage, u64)> {
     let file = std::fs::File::open(path)?;
     let file_size = file.metadata()?.len();
     if file_size > MAX_IMAGE_FILE_BYTES {
@@ -418,7 +457,7 @@ fn read_icon_image(path: &Path) -> Result<(image::DynamicImage, u64)> {
     if bytes.len() as u64 > MAX_IMAGE_FILE_BYTES {
         return Err(eyre!("Image file exceeds {} bytes", MAX_IMAGE_FILE_BYTES));
     }
-    let image = decode_icon_image(&bytes)?;
+    let image = decode_icon_image_at_size(&bytes, svg_dimension)?;
     let decoded_bytes = image.as_bytes().len() as u64;
     Ok((image, decoded_bytes))
 }
@@ -432,9 +471,14 @@ fn decode_image(bytes: &[u8]) -> Result<image::DynamicImage> {
     }
 }
 
+#[cfg(test)]
 fn decode_icon_image(bytes: &[u8]) -> Result<image::DynamicImage> {
+    decode_icon_image_at_size(bytes, MAX_SVG_DIMENSION as u32)
+}
+
+fn decode_icon_image_at_size(bytes: &[u8], svg_dimension: u32) -> Result<image::DynamicImage> {
     if looks_like_svg(bytes) {
-        return decode_svg(bytes);
+        return decode_icon_svg(bytes, svg_dimension);
     }
     if looks_like_xpm(bytes) {
         return decode_xpm(bytes);
@@ -651,15 +695,30 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 }
 
 fn decode_svg(bytes: &[u8]) -> Result<image::DynamicImage> {
+    decode_svg_with_limit(bytes, MAX_SVG_DIMENSION, false)
+}
+
+fn decode_icon_svg(bytes: &[u8], dimension: u32) -> Result<image::DynamicImage> {
+    let dimension = dimension.clamp(1, MAX_SVG_DIMENSION as u32) as f32;
+    decode_svg_with_limit(bytes, dimension, true)
+}
+
+fn decode_svg_with_limit(
+    bytes: &[u8],
+    maximum_dimension: f32,
+    allow_upscale: bool,
+) -> Result<image::DynamicImage> {
     let document = bounded_svg_document(bytes, MAX_SVG_DOCUMENT_BYTES)?;
     if !has_svg_document_root(&document) {
         return Err(eyre!("Input is not an SVG document"));
     }
     let tree = resvg::usvg::Tree::from_data(&document, &svg_options(svg_needs_fonts(&document)))?;
     let source_size = tree.size();
-    let scale = (MAX_SVG_DIMENSION / source_size.width())
-        .min(MAX_SVG_DIMENSION / source_size.height())
-        .min(1.0);
+    let mut scale =
+        (maximum_dimension / source_size.width()).min(maximum_dimension / source_size.height());
+    if !allow_upscale {
+        scale = scale.min(1.0);
+    }
     let width = (source_size.width() * scale).round().max(1.0) as u32;
     let height = (source_size.height() * scale).round().max(1.0) as u32;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
@@ -1000,12 +1059,14 @@ impl GraphicsAdapter {
 #[cfg(test)]
 mod tests {
     use super::{
-        ImageManager, MAX_IMAGE_FILE_BYTES, bounded_svg_document, decode_icon_image, decode_image,
-        decode_xpm, has_svg_document_root, looks_like_svg, normalize_desktop_icon, svg_needs_fonts,
-        svg_options, unpremultiply_rgba,
+        ImageManager, MAX_IMAGE_FILE_BYTES, bounded_svg_document, decode_icon_image,
+        decode_icon_image_at_size, decode_image, decode_xpm, has_svg_document_root, looks_like_svg,
+        normalize_desktop_icon, svg_needs_fonts, svg_options, unpremultiply_rgba,
     };
     use flate2::Compression;
     use flate2::write::GzEncoder;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use ratatui_image::picker::Picker;
     use std::io::{Cursor, Write};
     use std::sync::Arc;
@@ -1024,6 +1085,14 @@ mod tests {
         (left, top, right, bottom)
     }
 
+    fn visible_pixel_count(image: &image::DynamicImage) -> usize {
+        image
+            .to_rgba8()
+            .pixels()
+            .filter(|pixel| pixel[3] > 8)
+            .count()
+    }
+
     #[test]
     fn desktop_icons_with_different_source_padding_share_one_visual_box() {
         let mut padded = image::RgbaImage::new(64, 64);
@@ -1035,23 +1104,39 @@ mod tests {
         }
         let full = image::RgbaImage::from_pixel(128, 128, image::Rgba([255, 255, 255, 255]));
 
-        let padded =
-            normalize_desktop_icon(image::DynamicImage::ImageRgba8(padded), 100, 100, 50, 50);
-        let full = normalize_desktop_icon(image::DynamicImage::ImageRgba8(full), 100, 100, 50, 50);
+        let padded = normalize_desktop_icon(
+            image::DynamicImage::ImageRgba8(padded),
+            100,
+            100,
+            50,
+            50,
+            10,
+        );
+        let full =
+            normalize_desktop_icon(image::DynamicImage::ImageRgba8(full), 100, 100, 50, 50, 10);
 
-        assert_eq!(alpha_bounds(&padded), (6, 6, 93, 93));
-        assert_eq!(alpha_bounds(&full), alpha_bounds(&padded));
+        assert_eq!(alpha_bounds(&padded.image), (6, 6, 93, 93));
+        assert_eq!(alpha_bounds(&full.image), alpha_bounds(&padded.image));
     }
 
     #[test]
     fn desktop_icon_alignment_uses_the_available_canvas_space() {
         let source = image::RgbaImage::from_pixel(10, 10, image::Rgba([255, 255, 255, 255]));
+        let above = normalize_desktop_icon(
+            image::DynamicImage::ImageRgba8(source.clone()),
+            100,
+            100,
+            0,
+            -100,
+            10,
+        );
         let left = normalize_desktop_icon(
             image::DynamicImage::ImageRgba8(source.clone()),
             100,
             100,
             0,
             0,
+            10,
         );
         let centered = normalize_desktop_icon(
             image::DynamicImage::ImageRgba8(source.clone()),
@@ -1059,13 +1144,29 @@ mod tests {
             100,
             50,
             50,
+            10,
         );
-        let right =
-            normalize_desktop_icon(image::DynamicImage::ImageRgba8(source), 100, 100, 100, 100);
+        let right = normalize_desktop_icon(
+            image::DynamicImage::ImageRgba8(source),
+            100,
+            100,
+            100,
+            100,
+            10,
+        );
 
-        assert_eq!(alpha_bounds(&left), (0, 0, 87, 87));
-        assert_eq!(alpha_bounds(&centered), (6, 6, 93, 93));
-        assert_eq!(alpha_bounds(&right), (12, 12, 99, 99));
+        assert_eq!(above.top_overflow_rows, 2);
+        assert_eq!(alpha_bounds(&above.image), (0, 8, 87, 95));
+        assert_eq!(
+            visible_pixel_count(&above.image),
+            visible_pixel_count(&left.image)
+        );
+        assert_eq!(left.top_overflow_rows, 0);
+        assert_eq!(alpha_bounds(&left.image), (0, 0, 87, 87));
+        assert_eq!(centered.top_overflow_rows, 0);
+        assert_eq!(alpha_bounds(&centered.image), (6, 6, 93, 93));
+        assert_eq!(right.top_overflow_rows, 0);
+        assert_eq!(alpha_bounds(&right.image), (12, 12, 99, 99));
     }
 
     #[test]
@@ -1091,6 +1192,23 @@ mod tests {
     }
 
     #[test]
+    fn render_reports_when_no_cached_image_was_drawn() {
+        let mut manager = ImageManager::new(Picker::halfblocks());
+        let mut terminal = Terminal::new(TestBackend::new(10, 4)).expect("terminal should open");
+        let mut rendered = true;
+
+        terminal
+            .draw(|frame| {
+                rendered = manager
+                    .render(frame, frame.area())
+                    .expect("empty image rendering should succeed");
+            })
+            .expect("terminal should draw");
+
+        assert!(!rendered);
+    }
+
+    #[test]
     fn decodes_svg_bytes_into_rgba_image() {
         let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="8">
             <rect width="16" height="8" fill="#ff0000"/>
@@ -1100,6 +1218,17 @@ mod tests {
 
         assert_eq!(image.width(), 16);
         assert_eq!(image.height(), 8);
+    }
+
+    #[test]
+    fn desktop_svg_icons_render_at_the_requested_resolution() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="8">
+            <rect width="16" height="8" fill="#ff0000"/>
+        </svg>"##;
+
+        let image = decode_icon_image_at_size(svg, 128).expect("SVG icon should decode");
+
+        assert_eq!((image.width(), image.height()), (128, 64));
     }
 
     #[test]

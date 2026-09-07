@@ -19,12 +19,12 @@
 # Basic colors
 highlight_color = "LightBlue"
 main_border_color = "Yellow"
-apps_border_color = "Green" 
+items_border_color = "Green"
 input_border_color = "Cyan"
 
 # Light colors  
 main_text_color = "LightGreen"
-apps_text_color = "LightCyan"
+items_text_color = "LightCyan"
 input_text_color = "LightYellow"
 header_title_color = "LightMagenta"
 
@@ -32,30 +32,30 @@ header_title_color = "LightMagenta"
 # Full 6-digit hex (most common)
 # highlight_color = "#ff6b35"        # Orange
 # main_border_color = "#2ec4b6"      # Teal
-# apps_border_color = "#e71d36"      # Red
+# items_border_color = "#e71d36"      # Red
 # input_border_color = "#011627"     # Dark blue
 
 # Short 3-digit hex  
 # highlight_color = "#f63"           # Orange (same as #ff6633)
 # main_border_color = "#2ec"         # Teal (same as #22eecc)
-# apps_border_color = "#e13"         # Red (same as #ee1133)
+# items_border_color = "#e13"         # Red (same as #ee1133)
 
 # === RGB COLORS ===
 # RGB format with rgb() wrapper
 # highlight_color = "rgb(255, 107, 53)"    # Orange
 # main_border_color = "rgb(46, 196, 182)"  # Teal
-# apps_border_color = "rgb(231, 29, 54)"   # Red
+# items_border_color = "rgb(231, 29, 54)"  # Red
 
 # RGB format with just parentheses
 # highlight_color = "(255, 107, 53)"       # Orange
 # main_border_color = "(46, 196, 182)"     # Teal
-# apps_border_color = "(231, 29, 54)"      # Red
+# items_border_color = "(231, 29, 54)"     # Red
 
 # === 8-BIT COLORS (0-255) ===
 # Terminal 8-bit color palette
 # highlight_color = "202"            # Orange
 # main_border_color = "37"           # Teal
-# apps_border_color = "196"          # Bright red
+# items_border_color = "196"         # Bright red
 # input_border_color = "21"          # Bright blue
 # header_title_color = "220"         # Gold
 
@@ -64,27 +64,27 @@ header_title_color = "LightMagenta"
 # Gruvbox theme
 # highlight_color = "#fabd2f"        # Yellow
 # main_border_color = "#83a598"      # Blue  
-# apps_border_color = "#b8bb26"      # Green
+# items_border_color = "#b8bb26"     # Green
 # input_border_color = "#fe8019"     # Orange
 # header_title_color = "#d3869b"     # Purple
 
 # Nord theme  
 # highlight_color = "#88c0d0"        # Frost
 # main_border_color = "#81a1c1"      # Frost  
-# apps_border_color = "#a3be8c"      # Aurora green
+# items_border_color = "#a3be8c"     # Aurora green
 # input_border_color = "#d08770"     # Aurora orange
 # header_title_color = "#b48ead"     # Aurora purple
 
 # Dracula theme
 # highlight_color = "#ff79c6"        # Pink
 # main_border_color = "#8be9fd"      # Cyan
-# apps_border_color = "#50fa7b"      # Green  
+# items_border_color = "#50fa7b"     # Green
 # input_border_color = "#ffb86c"     # Orange
 # header_title_color = "#bd93f9"     # Purple
 
 # One Dark theme
 # highlight_color = "#61afef"        # Blue
 # main_border_color = "#56b6c2"      # Cyan
-# apps_border_color = "#98c379"      # Green
+# items_border_color = "#98c379"     # Green
 # input_border_color = "#e06c75"     # Red
 # header_title_color = "#c678dd"     # Purple

@@ -1,3 +1,5 @@
+//! Stable configuration defaults shared with runtime option defaults.
+
 use super::schema::{GeneralConfig, LayoutConfig, UiConfig};
 use crate::cli::{MatchMode, PinnedOrderMode, RankingMode};
 use crate::ui::PanelPosition;
@@ -30,8 +32,16 @@ pub(super) fn default_cursor() -> String {
     "█".to_string()
 }
 
+pub(super) fn default_selection_marker() -> String {
+    ">".to_string()
+}
+
 pub(super) fn default_white() -> String {
     "White".to_string()
+}
+
+pub(super) fn default_reset() -> String {
+    "Reset".to_string()
 }
 
 pub(super) fn default_pin_color() -> String {
@@ -85,12 +95,27 @@ impl Default for UiConfig {
             cursor: default_cursor(),
             hard_stop: false,
             rounded_borders: true,
+            show_main_border: true,
+            show_items_border: true,
+            show_input_border: true,
+            show_panel_titles: true,
+            show_input_count: true,
+            show_input_prompt: true,
+            show_selection_marker: true,
+            selection_marker: default_selection_marker(),
+            show_pin_icons: true,
+            input_panel_style: crate::ui::InputPanelStyle::Classic,
             disable_mouse: false,
             main_border_color: default_white(),
-            apps_border_color: default_white(),
+            main_background_color: default_reset(),
+            items_border_color: default_white(),
+            items_background_color: default_reset(),
+            items_selection_background_color: default_reset(),
+            items_selection_rounded: false,
             input_border_color: default_white(),
+            input_background_color: default_reset(),
             main_text_color: default_white(),
-            apps_text_color: default_white(),
+            items_text_color: default_white(),
             input_text_color: default_white(),
             fancy_mode: false,
             header_title_color: default_white(),

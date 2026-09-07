@@ -1,9 +1,11 @@
+//! Launcher panel layout and selected-application preview rendering.
+
 use eyre::Result;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 use ratatui::style::Style;
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
+use ratatui::text::Line;
+use ratatui::widgets::Paragraph;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn effective_title_height(total_height: u16, title_panel_height_percent: u16) -> u16 {
@@ -55,7 +57,14 @@ fn split_icon_preview(
     area: Rect,
     position: crate::ui::HorizontalPosition,
     icon_width_percent: u16,
-) -> (Rect, Rect) {
+) -> (Rect, Option<Rect>) {
+    if position == crate::ui::HorizontalPosition::Center {
+        let icon_width = (u32::from(area.width) * u32::from(icon_width_percent) / 100)
+            .min(u32::from(area.width)) as u16;
+        let icon_x = area.x + area.width.saturating_sub(icon_width) / 2;
+        return (Rect::new(icon_x, area.y, icon_width, area.height), None);
+    }
+
     let text_width_percent = 100u16.saturating_sub(icon_width_percent);
     let constraints = match position {
         crate::ui::HorizontalPosition::Left => [
@@ -66,11 +75,13 @@ fn split_icon_preview(
             Constraint::Percentage(text_width_percent),
             Constraint::Percentage(icon_width_percent),
         ],
+        crate::ui::HorizontalPosition::Center => unreachable!("center was handled above"),
     };
     let content = Layout::horizontal(constraints).split(area);
     match position {
-        crate::ui::HorizontalPosition::Left => (content[0], content[1]),
-        crate::ui::HorizontalPosition::Right => (content[1], content[0]),
+        crate::ui::HorizontalPosition::Left => (content[0], Some(content[1])),
+        crate::ui::HorizontalPosition::Right => (content[1], Some(content[0])),
+        crate::ui::HorizontalPosition::Center => unreachable!("center was handled above"),
     }
 }
 
@@ -79,10 +90,7 @@ pub(crate) fn launcher_preview_icon_area(size: Rect, cli: &crate::cli::Opts) -> 
     if effective_title_height(size.height, cli.title_panel_height_percent) == 0 {
         return Rect::default();
     }
-    let panel_inner = title_area.inner(Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
+    let panel_inner = info_block("", cli).inner(title_area);
     let (icon_area, _) = split_icon_preview(
         panel_inner,
         cli.desktop_icon_position,
@@ -95,6 +103,21 @@ pub(crate) fn launcher_preview_icon_area(size: Rect, cli: &crate::cli::Opts) -> 
     Rect::new(0, 0, icon_area.width, icon_area.height)
 }
 
+fn info_block<'a>(title: &'a str, cli: &crate::cli::Opts) -> ratatui::widgets::Block<'a> {
+    super::panel_block(
+        title,
+        super::PanelTheme {
+            show_border: cli.show_main_border,
+            show_title: cli.show_panel_titles,
+            bold_title: false,
+            rounded_border: cli.rounded_borders,
+            border_color: cli.main_border_color,
+            background_color: cli.main_background_color,
+            title_color: cli.header_title_color,
+        },
+    )
+}
+
 /// App filtering and sorting UI (Stateless Renderer)
 pub struct UI;
 
@@ -102,8 +125,13 @@ pub struct UI;
 pub struct AppIcons<'a> {
     pub(crate) image_manager: &'a mut crate::ui::ImageManager,
     pub(crate) preview_key: Option<&'a str>,
-    pub(crate) list_keys: &'a HashMap<String, String>,
+    pub(crate) list_icons: &'a HashMap<String, ListIconPlacement>,
     pub(crate) failed_list_icons: &'a mut HashSet<String>,
+}
+
+pub(crate) struct ListIconPlacement {
+    pub(crate) key: String,
+    pub(crate) top_overflow_rows: u16,
 }
 
 impl UI {
@@ -144,18 +172,8 @@ impl UI {
                 "Fsel".to_string()
             };
 
-            let info_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(cli.main_border_color))
-                .title(Span::styled(
-                    format!(" {} ", title),
-                    Style::default().fg(cli.header_title_color),
-                ))
-                .border_type(if cli.rounded_borders {
-                    BorderType::Rounded
-                } else {
-                    BorderType::Plain
-                });
+            let title = format!(" {title} ");
+            let info_block = info_block(&title, cli);
 
             // Text rendering from state.text which should be populated by state.update_info
             let info_text: Vec<Line> = state.text.lines().map(Line::from).collect();
@@ -174,6 +192,7 @@ impl UI {
                     horizontal: 1,
                     vertical: 0,
                 });
+                f.render_widget(info_block, title_area);
                 let icon_rendered = if icon_area.width > 0 && icon_area.height > 0 {
                     let icons = app_icons
                         .as_mut()
@@ -186,17 +205,19 @@ impl UI {
                     None
                 };
                 if icon_rendered == Some(true) {
-                    f.render_widget(info_block, title_area);
-                    f.render_widget(
-                        Paragraph::new(info_text).style(Style::default().fg(cli.main_text_color)),
-                        text_area,
-                    );
+                    if let Some(text_area) = text_area {
+                        f.render_widget(
+                            Paragraph::new(info_text)
+                                .style(Style::default().fg(cli.main_text_color)),
+                            text_area,
+                        );
+                    }
                 } else {
                     icon_render_failed = icon_rendered == Some(false);
-                    let paragraph = Paragraph::new(info_text)
-                        .block(info_block)
-                        .style(Style::default().fg(cli.main_text_color));
-                    f.render_widget(paragraph, title_area);
+                    f.render_widget(
+                        Paragraph::new(info_text).style(Style::default().fg(cli.main_text_color)),
+                        inner,
+                    );
                 }
             } else {
                 let paragraph = Paragraph::new(info_text)
@@ -206,61 +227,7 @@ impl UI {
             }
         }
 
-        // Render Input
-        let input_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(cli.input_border_color))
-            .title(Span::styled(
-                " Input ",
-                Style::default().fg(cli.header_title_color),
-            ))
-            .border_type(if cli.rounded_borders {
-                BorderType::Rounded
-            } else {
-                BorderType::Plain
-            });
-
-        // Legacy Formatting: (Selected/Total) >> Query
-        // Colors:
-        // - Brackets/Slash/Text: Input Text Color
-        // - Selected Number: Highlight Color
-        // - > Cursor: Highlight Color
-        // - Cursor Block: Highlight Color
-
-        let spans = vec![
-            Span::styled("(", Style::default().fg(cli.input_text_color)),
-            Span::styled(
-                (state.selected.map_or(0, |v| v + 1)).to_string(),
-                Style::default().fg(cli.highlight_color),
-            ),
-            Span::styled("/", Style::default().fg(cli.input_text_color)),
-            Span::styled(
-                state.shown.len().to_string(),
-                Style::default().fg(cli.input_text_color),
-            ),
-            Span::styled(") ", Style::default().fg(cli.input_text_color)),
-            Span::styled(">", Style::default().fg(cli.highlight_color)),
-            Span::styled("> ", Style::default().fg(cli.input_text_color)),
-            Span::styled(&state.query, Style::default().fg(cli.input_text_color)),
-            Span::styled(&cli.cursor, Style::default().fg(cli.highlight_color)),
-        ];
-
-        let line = Line::from(spans);
-        let text_len = line.width();
-
-        let available_width = input_area.width.saturating_sub(2) as usize; // Account for borders
-
-        let scroll_x = if text_len > available_width {
-            (text_len - available_width) as u16
-        } else {
-            0
-        };
-
-        let input = Paragraph::new(line)
-            .block(input_block)
-            .style(Style::default().fg(cli.input_text_color))
-            .scroll((0, scroll_x));
-        f.render_widget(input, input_area);
+        super::input_panel::render(f, state, cli, input_area);
 
         let list_render_failed =
             super::app_list::render(f, state, cli, apps_area, app_icons.as_mut())?;
@@ -286,11 +253,11 @@ mod tests {
     }
 
     #[test]
-    fn icon_preview_defaults_can_place_icon_on_the_right() {
+    fn icon_preview_can_place_icon_on_the_right() {
         let (icon, text) =
             split_icon_preview(Rect::new(0, 0, 100, 10), HorizontalPosition::Right, 40);
 
-        assert_eq!(text, Rect::new(0, 0, 60, 10));
+        assert_eq!(text, Some(Rect::new(0, 0, 60, 10)));
         assert_eq!(icon, Rect::new(60, 0, 40, 10));
     }
 
@@ -300,7 +267,24 @@ mod tests {
             split_icon_preview(Rect::new(0, 0, 100, 10), HorizontalPosition::Left, 35);
 
         assert_eq!(icon, Rect::new(0, 0, 35, 10));
-        assert_eq!(text, Rect::new(35, 0, 65, 10));
+        assert_eq!(text, Some(Rect::new(35, 0, 65, 10)));
+    }
+
+    #[test]
+    fn icon_preview_can_use_the_center_of_the_title_panel() {
+        let (icon, text) =
+            split_icon_preview(Rect::new(10, 3, 100, 10), HorizontalPosition::Center, 40);
+
+        assert_eq!(icon, Rect::new(40, 3, 40, 10));
+        assert_eq!(text, None);
+    }
+
+    #[test]
+    fn centered_preview_percentage_does_not_saturate_on_wide_terminals() {
+        let (icon, _) =
+            split_icon_preview(Rect::new(0, 0, 2_000, 10), HorizontalPosition::Center, 40);
+
+        assert_eq!(icon, Rect::new(600, 0, 800, 10));
     }
 
     #[test]
@@ -315,6 +299,31 @@ mod tests {
         assert_eq!(
             launcher_preview_icon_area(Rect::new(0, 0, 100, 40), &cli),
             Rect::new(0, 0, 37, 8)
+        );
+    }
+
+    #[test]
+    fn borderless_preview_uses_the_released_panel_cells() {
+        let cli = Opts {
+            desktop_icon_mode: DesktopIconMode::Preview,
+            title_panel_height_percent: 25,
+            desktop_icon_preview_width_percent: 40,
+            show_main_border: false,
+            ..Opts::default()
+        };
+
+        assert_eq!(
+            launcher_preview_icon_area(Rect::new(0, 0, 100, 40), &cli),
+            Rect::new(0, 0, 38, 9)
+        );
+
+        let titleless = Opts {
+            show_panel_titles: false,
+            ..cli
+        };
+        assert_eq!(
+            launcher_preview_icon_area(Rect::new(0, 0, 100, 40), &titleless),
+            Rect::new(0, 0, 38, 10)
         );
     }
 }

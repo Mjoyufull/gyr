@@ -93,12 +93,12 @@ Bedrock Linux and for duplicates inside the same application directory.
 
 ### Desktop Icons
 
-The selected application's icon appears on the right side of the title panel by default. fsel
+The selected application's icon appears on the left side of the title panel by default. fsel
 detects GTK, KDE, and LXQt icon-theme settings, follows XDG theme inheritance, and supports absolute desktop-entry icon
 paths. PNG and SVG icons render with Kitty, Sixel, or the half-block fallback.
 
 ```sh
-# Default selected-icon preview
+# Default left-side selected-icon preview
 fsel --desktop-icons
 
 # Icons beside results, or both placements
@@ -111,6 +111,9 @@ fsel --icon-position left --icon-size 96
 # Put the selection arrow before left-side list icons
 fsel --desktop-icons=list --icon-position left --icon-arrow-before
 
+# Add two columns between list icons and labels
+fsel --desktop-icons=list --icon-list-gap 2
+
 # Override theme detection
 fsel --icon-theme Papirus-Dark
 
@@ -122,16 +125,62 @@ Persistent configuration belongs in `[app_launcher]`:
 
 ```toml
 icon_mode = "preview"               # "preview", "list", "both", or "none"
-icon_position = "right"             # "left" or "right"
+icon_position = "left"              # Preview: "left", "center", or "right"
 icon_preview_width_percent = 40      # 10-90
 icon_list_width = 4                  # 1-16 terminal columns
 icon_list_height = 2                 # 1-8 terminal rows per app
+icon_list_gap = 1                    # 0-16 columns between icon and label
+icon_list_vertical_align_percent = 0 # Offset artwork vertically; negatives overflow upward
 icon_arrow_before = false            # Arrow before left-side list icons
 icon_size = 128                      # 1-4096
-icon_horizontal_align_percent = 50  # 0=left, 50=center, 100=right
-icon_vertical_align_percent = 50    # 0=top, 50=center, 100=bottom
+icon_horizontal_align_percent = 50  # Fine adjustment inside the chosen icon area
+icon_vertical_align_percent = 50    # Fine adjustment inside the preview icon area
 # icon_theme = "Papirus-Dark"
 ```
+
+List labels and selection markers stay on the first row of each item. Use
+`icon_list_vertical_align_percent` for pixel-level artwork adjustment without moving text between
+terminal rows. Values from `-100` to `-1` shift the complete artwork above the normal top-aligned
+position. This deliberately allows overlap with earlier list rows or panel chrome, and overlapping
+graphics may stack differently between terminal protocols. The preview keeps its independent
+`icon_vertical_align_percent` setting.
+
+### Shared Selector Chrome and Backgrounds
+
+The launcher, dmenu, and cclip panels use the same semantic backgrounds and independently
+configurable chrome. `Reset` inherits the terminal background. An OpenCode-like flat layout can be
+built without changing the compatibility defaults:
+
+```toml
+main_background_color = "#101010"
+items_background_color = "#141414"
+items_selection_background_color = "#ffb07c"
+input_background_color = "#101010"
+items_selection_rounded = false
+input_panel_style = "command"
+show_main_border = false
+show_items_border = false
+show_input_border = false
+show_panel_titles = false
+show_input_count = true
+show_input_prompt = false
+show_selection_marker = true
+selection_marker = "█"
+show_pin_icons = true
+input_panel_height = 5
+
+# Optional alternatives: set either value to zero to hide that entire bar.
+# title_panel_height_percent = 0
+# input_panel_height = 0
+```
+
+Set `items_selection_rounded = true` for half-cell rounded ends around the selected row. List text
+and icons are inset automatically so the caps are not overwritten. The `command` input style uses
+a thicker accent rail, highlights the selected item name, and moves the selection count plus the
+active select/exit key hints into a footer. `selection_marker` accepts arbitrary marker text
+independently of the input `cursor`. `classic` preserves the original inline
+`(selected/total) >> query` design. The older `apps_*` TOML and `FSEL_APPS_*` environment names
+remain accepted as compatibility aliases for the neutral `items_*` names.
 
 ### Launch Methods
 ```sh
@@ -615,9 +664,9 @@ Note: Bare `FSEL_*` launcher keys set root defaults. `[app_launcher]` in `config
 
 `FSEL_TERMINAL_LAUNCHER`, `FSEL_FILTER_DESKTOP`, `FSEL_LIST_EXECUTABLES_IN_PATH`, `FSEL_HIDE_BEFORE_TYPING`, `FSEL_MATCH_MODE`, `FSEL_RANKING_MODE`, `FSEL_PINNED_ORDER`, `FSEL_SYSTEMD_RUN`, `FSEL_UWSM`, `FSEL_DETACH`, `FSEL_NO_EXEC`, `FSEL_CONFIRM_FIRST_LAUNCH`, `FSEL_PREFIX_DEPTH`
 
-**Default UI / layout (applies when a mode does not override):**
+**Default UI / layout (shared by launcher, dmenu, and cclip):**
 
-`FSEL_HIGHLIGHT_COLOR`, `FSEL_CURSOR`, `FSEL_HARD_STOP`, `FSEL_ROUNDED_BORDERS`, `FSEL_DISABLE_MOUSE`, `FSEL_TITLE_PANEL_HEIGHT_PERCENT`, `FSEL_INPUT_PANEL_HEIGHT`, `FSEL_TITLE_PANEL_POSITION`
+`FSEL_HIGHLIGHT_COLOR`, `FSEL_CURSOR`, `FSEL_HARD_STOP`, `FSEL_ROUNDED_BORDERS`, `FSEL_DISABLE_MOUSE`, `FSEL_MAIN_BORDER_COLOR`, `FSEL_MAIN_BACKGROUND_COLOR`, `FSEL_ITEMS_BORDER_COLOR`, `FSEL_ITEMS_BACKGROUND_COLOR`, `FSEL_ITEMS_SELECTION_BACKGROUND_COLOR`, `FSEL_ITEMS_SELECTION_ROUNDED`, `FSEL_INPUT_BORDER_COLOR`, `FSEL_INPUT_BACKGROUND_COLOR`, `FSEL_MAIN_TEXT_COLOR`, `FSEL_ITEMS_TEXT_COLOR`, `FSEL_INPUT_TEXT_COLOR`, `FSEL_HEADER_TITLE_COLOR`, `FSEL_SHOW_MAIN_BORDER`, `FSEL_SHOW_ITEMS_BORDER`, `FSEL_SHOW_INPUT_BORDER`, `FSEL_SHOW_PANEL_TITLES`, `FSEL_SHOW_INPUT_COUNT`, `FSEL_SHOW_INPUT_PROMPT`, `FSEL_SHOW_SELECTION_MARKER`, `FSEL_SELECTION_MARKER`, `FSEL_SHOW_PIN_ICONS`, `FSEL_INPUT_PANEL_STYLE`, `FSEL_TITLE_PANEL_HEIGHT_PERCENT`, `FSEL_INPUT_PANEL_HEIGHT`, `FSEL_TITLE_PANEL_POSITION`
 
 **`[dmenu]` overrides (`FSEL_DMENU_*`):**
 
@@ -629,7 +678,7 @@ Note: Bare `FSEL_*` launcher keys set root defaults. `[app_launcher]` in `config
 
 **`[app_launcher]` overrides (`FSEL_APP_LAUNCHER_*`):**
 
-`FILTER_DESKTOP`, `FILTER_ACTIONS`, `LIST_EXECUTABLES_IN_PATH`, `HIDE_BEFORE_TYPING`, `LAUNCH_PREFIX`, `MATCH_MODE`, `RANKING_MODE`, `PINNED_ORDER`, `CONFIRM_FIRST_LAUNCH`, `PREFIX_DEPTH`, `ICON_MODE`, `ICON_POSITION`, `ICON_PREVIEW_WIDTH_PERCENT`, `ICON_LIST_WIDTH`, `ICON_LIST_HEIGHT`, `ICON_ARROW_BEFORE`, `ICON_SIZE`, `ICON_HORIZONTAL_ALIGN_PERCENT`, `ICON_VERTICAL_ALIGN_PERCENT`, `ICON_THEME` (each prefixed with `FSEL_APP_LAUNCHER_`)
+`FILTER_DESKTOP`, `FILTER_ACTIONS`, `LIST_EXECUTABLES_IN_PATH`, `HIDE_BEFORE_TYPING`, `LAUNCH_PREFIX`, `MATCH_MODE`, `RANKING_MODE`, `PINNED_ORDER`, `CONFIRM_FIRST_LAUNCH`, `PREFIX_DEPTH`, `ICON_MODE`, `ICON_POSITION`, `ICON_PREVIEW_WIDTH_PERCENT`, `ICON_LIST_WIDTH`, `ICON_LIST_HEIGHT`, `ICON_LIST_GAP`, `ICON_LIST_VERTICAL_ALIGN_PERCENT`, `ICON_ARROW_BEFORE`, `ICON_SIZE`, `ICON_HORIZONTAL_ALIGN_PERCENT`, `ICON_VERTICAL_ALIGN_PERCENT`, `ICON_THEME` (each prefixed with `FSEL_APP_LAUNCHER_`)
 
 Keybinds are not configurable via environment variables; use `~/.config/fsel/keybinds.toml` or the `[keybinds]` section in `config.toml`. When both are present, the embedded `[keybinds]` section takes precedence.
 
@@ -658,13 +707,13 @@ This means you've placed a **color/UI option inside the [app_launcher] section**
 ### Field Reference
 
 **Root Level Fields:**
-- Colors: `highlight_color`, `main_border_color`, `apps_border_color`, `input_border_color`, `main_text_color`, `apps_text_color`, `input_text_color`, `header_title_color`, `pin_color`
-- UI: `cursor`, `rounded_borders`, `hard_stop`, `fancy_mode`, `pin_icon`, `disable_mouse`
+- Colors: `highlight_color`, `main_border_color`, `main_background_color`, `items_border_color`, `items_background_color`, `items_selection_background_color`, `input_border_color`, `input_background_color`, `main_text_color`, `items_text_color`, `input_text_color`, `header_title_color`, `pin_color`
+- UI: `cursor`, `selection_marker`, `rounded_borders`, `items_selection_rounded`, `input_panel_style`, `show_main_border`, `show_items_border`, `show_input_border`, `show_panel_titles`, `show_input_count`, `show_input_prompt`, `show_selection_marker`, `show_pin_icons`, `hard_stop`, `fancy_mode`, `pin_icon`, `disable_mouse`
 - Layout: `title_panel_height_percent`, `input_panel_height`, `title_panel_position`
 - General: `terminal_launcher` (use `"tty"` for TTY mode, same as -t/--tty), `keybinds`
 
 **[app_launcher] Section (strict validation):**
-- `filter_desktop`, `filter_actions`, `auto_hide_duplicates`, `list_executables_in_path`, `hide_before_typing`, `match_mode`, `ranking_mode`, `pinned_order`, `confirm_first_launch`, `prefix_depth`, `icon_mode`, `icon_position`, `icon_preview_width_percent`, `icon_list_width`, `icon_list_height`, `icon_arrow_before`, `icon_size`, `icon_horizontal_align_percent`, `icon_vertical_align_percent`, `icon_theme`
+- `filter_desktop`, `filter_actions`, `auto_hide_duplicates`, `list_executables_in_path`, `hide_before_typing`, `match_mode`, `ranking_mode`, `pinned_order`, `confirm_first_launch`, `prefix_depth`, `icon_mode`, `icon_position`, `icon_preview_width_percent`, `icon_list_width`, `icon_list_height`, `icon_list_gap`, `icon_list_vertical_align_percent`, `icon_arrow_before`, `icon_size`, `icon_horizontal_align_percent`, `icon_vertical_align_percent`, `icon_theme`
 
 **[dmenu] Section:**
 - Colors: `highlight_color`, `main_border_color`, `items_border_color`, `input_border_color`, `main_text_color`, `items_text_color`, `input_text_color`, `header_title_color`

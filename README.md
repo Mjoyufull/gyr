@@ -306,9 +306,24 @@ cursor = "█"
 # App launcher
 terminal_launcher = "alacritty -e"
 
-# Pin/favorite settings (root-level UI options)
+# Shared launcher, dmenu, and cclip visual settings
 pin_color = "rgb(255,165,0)"       # Color for pin icon (orange)
 pin_icon = "📌"                     # Icon for pinned apps
+items_background_color = "Reset"  # Items panel background
+items_selection_background_color = "Reset" # Selected row background
+items_selection_rounded = false    # Optional half-cell rounded row ends
+main_background_color = "Reset"   # Main info panel background
+input_background_color = "Reset"  # Input panel background
+show_main_border = true
+show_items_border = true
+show_input_border = true
+show_panel_titles = true
+show_input_count = true
+show_input_prompt = true
+show_selection_marker = true
+selection_marker = ">"              # Any marker text, for example "█"
+show_pin_icons = true
+input_panel_style = "classic"       # "classic" or "command"
 
 [app_launcher]
 filter_desktop = true              # Filter apps by desktop environment
@@ -319,25 +334,34 @@ match_mode = "fuzzy"               # "fuzzy" or "exact"
 ranking_mode = "frecency"          # "frecency", "recency", or "frequency"
 pinned_order = "ranking"           # "ranking", "alphabetical", "oldest_pinned", "newest_pinned"
 icon_mode = "preview"               # "preview", "list", "both", or "none"
-icon_position = "right"             # "left" or "right"
+icon_position = "left"              # Preview: "left", "center", or "right"
 icon_preview_width_percent = 40
 icon_list_width = 4                  # Terminal columns reserved beside each app
 icon_list_height = 2                 # Terminal rows per app when list icons are enabled
+icon_list_gap = 1                    # Columns between each list icon and label
+icon_list_vertical_align_percent = 0 # Offset artwork vertically; negatives overflow upward
 icon_arrow_before = false            # Put selection arrow before left-side list icons
 icon_size = 128
-icon_horizontal_align_percent = 50  # 0=left, 50=center, 100=right
-icon_vertical_align_percent = 50    # 0=top, 50=center, 100=bottom
+icon_horizontal_align_percent = 50  # Fine adjustment inside the chosen icon area
+icon_vertical_align_percent = 50    # Fine adjustment inside the preview icon area
 # icon_theme = "Papirus-Dark"       # Optional override; desktop settings are detected by default
 ```
+
+The neutral `items_*` settings theme the launcher results, dmenu choices, and cclip history. The
+older `apps_*` names remain accepted as compatibility aliases.
 
 Desktop icons are resolved from the active XDG icon theme (GTK, KDE, and LXQt settings are
 detected), including inherited themes and
 absolute `Icon=` paths. PNG and SVG icons render through Kitty, Sixel, or the terminal-independent
-half-block fallback. The selected icon uses the right side of the title panel by default, matching
-the information/preview layout. Set `icon_mode = "list"` for icons beside results or `"both"` for
-both placements; `icon_position`, `icon_list_width`, and `icon_list_height` customize the list.
+half-block fallback. The selected icon uses the left side of the title panel by default. Set
+`icon_mode = "list"` for icons beside results or `"both"` for both placements. `icon_list_width`,
+`icon_list_height` and `icon_list_gap` customize the list layout. List labels and markers remain on
+the first item row; `icon_list_vertical_align_percent` moves the artwork at pixel resolution instead.
+Negative values shift the complete artwork above the normal top-aligned position. This intentional
+overflow can overlap earlier list rows or panel chrome at extreme values, with protocol-specific
+stacking behavior.
 Transparent source padding is normalized so icons occupy a consistent visual box. The horizontal
-and vertical alignment percentages position that box precisely, with 50/50 centered by default.
+and vertical percentages provide optional fine adjustment within the chosen icon area.
 
 Field placement matters. Root-level UI options and `[app_launcher]` / `[dmenu]` / `[cclip]` sections are validated separately.
 See [config.toml](./config.toml) and [keybinds.toml](./keybinds.toml) for all options with detailed comments.

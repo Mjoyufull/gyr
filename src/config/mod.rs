@@ -354,10 +354,47 @@ title_panel_position = "upside_down"
         assert_eq!(ui.highlight_color, "LightBlue");
         assert_eq!(ui.cursor, "█");
         assert!(ui.rounded_borders);
+        assert!(ui.show_main_border);
+        assert!(ui.show_items_border);
+        assert!(ui.show_input_border);
+        assert!(ui.show_panel_titles);
+        assert!(ui.show_input_count);
+        assert!(ui.show_input_prompt);
+        assert!(ui.show_selection_marker);
+        assert_eq!(ui.selection_marker, ">");
+        assert!(ui.show_pin_icons);
+        assert_eq!(ui.input_panel_style, crate::ui::InputPanelStyle::Classic);
+        assert!(!ui.items_selection_rounded);
+        assert_eq!(ui.main_background_color, "Reset");
+        assert_eq!(ui.items_background_color, "Reset");
+        assert_eq!(ui.items_selection_background_color, "Reset");
+        assert_eq!(ui.input_background_color, "Reset");
 
         assert_eq!(layout.title_panel_height_percent, 30);
         assert_eq!(layout.input_panel_height, 3);
         assert_eq!(layout.title_panel_position, PanelPosition::Top);
+    }
+
+    #[test]
+    fn legacy_apps_visual_names_remain_compatible() {
+        let config: FselConfig = toml::from_str(
+            r##"
+show_apps_border = false
+apps_border_color = "Blue"
+apps_background_color = "#101010"
+apps_selection_background_color = "Yellow"
+apps_selection_rounded = true
+apps_text_color = "Green"
+"##,
+        )
+        .expect("legacy visual names should deserialize");
+
+        assert!(!config.ui.show_items_border);
+        assert_eq!(config.ui.items_border_color, "Blue");
+        assert_eq!(config.ui.items_background_color, "#101010");
+        assert_eq!(config.ui.items_selection_background_color, "Yellow");
+        assert!(config.ui.items_selection_rounded);
+        assert_eq!(config.ui.items_text_color, "Green");
     }
 
     #[test]

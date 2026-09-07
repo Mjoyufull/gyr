@@ -35,9 +35,11 @@ impl FromStr for PanelPosition {
 #[serde(rename_all = "lowercase")]
 pub enum HorizontalPosition {
     /// Place content on the left.
-    Left,
-    /// Place content on the right.
     #[default]
+    Left,
+    /// Place preview content in the center.
+    Center,
+    /// Place content on the right.
     Right,
 }
 
@@ -47,9 +49,35 @@ impl FromStr for HorizontalPosition {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim().to_lowercase().as_str() {
             "left" => Ok(Self::Left),
+            "center" => Ok(Self::Center),
             "right" => Ok(Self::Right),
             _ => Err(format!(
-                "Invalid horizontal position: '{value}'. Valid options: left, right"
+                "Invalid horizontal position: '{value}'. Valid options: left, center, right"
+            )),
+        }
+    }
+}
+
+/// Visual design used by the launcher input panel.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum InputPanelStyle {
+    /// Preserve the original bordered prompt and inline counter.
+    #[default]
+    Classic,
+    /// Use an accent rail with the count and key hints in a footer.
+    Command,
+}
+
+impl FromStr for InputPanelStyle {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_lowercase().as_str() {
+            "classic" => Ok(Self::Classic),
+            "command" => Ok(Self::Command),
+            _ => Err(format!(
+                "Invalid input panel style: '{value}'. Valid options: classic, command"
             )),
         }
     }

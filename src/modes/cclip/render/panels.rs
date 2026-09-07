@@ -1,34 +1,8 @@
+//! Cclip selection highlighting with optional tag colors.
+
 use super::super::TagMetadataFormatter;
 use crate::ui::DmenuUI;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders};
-
-pub(super) fn border_type(rounded_borders: bool) -> BorderType {
-    if rounded_borders {
-        BorderType::Rounded
-    } else {
-        BorderType::Plain
-    }
-}
-
-pub(super) fn panel_block(
-    title: &'static str,
-    border_type: BorderType,
-    title_color: Color,
-    border_color: Color,
-) -> Block<'static> {
-    Block::default()
-        .borders(Borders::ALL)
-        .title(Span::styled(
-            title,
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(title_color),
-        ))
-        .border_type(border_type)
-        .border_style(Style::default().fg(border_color))
-}
 
 pub(super) fn highlight_style(
     ui: &DmenuUI<'_>,

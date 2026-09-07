@@ -1,3 +1,5 @@
+//! Inline and fullscreen clipboard image preview lifecycle management.
+
 mod fullscreen;
 mod loading;
 
@@ -187,8 +189,7 @@ impl ImageRuntime {
         if let Some(manager) = &mut self.image_manager
             && let Ok(mut manager_lock) = manager.try_lock()
         {
-            manager_lock.render(frame, area)?;
-            return Ok(true);
+            return manager_lock.render(frame, area);
         }
 
         Ok(false)
@@ -258,6 +259,21 @@ mod tests {
             input_text_color: Color::White,
             header_title_color: Color::White,
             rounded_borders: true,
+            show_main_border: true,
+            show_items_border: true,
+            show_input_border: true,
+            show_panel_titles: true,
+            show_input_count: true,
+            show_input_prompt: true,
+            show_selection_marker: true,
+            selection_marker: ">".to_string(),
+            input_panel_style: crate::ui::InputPanelStyle::Classic,
+            main_background_color: Color::Reset,
+            items_background_color: Color::Reset,
+            items_selection_background_color: Color::Reset,
+            items_selection_rounded: false,
+            input_background_color: Color::Reset,
+            keybinds: crate::ui::Keybinds::default(),
             content_panel_height_percent: 30,
             input_panel_height: 3,
             content_panel_position: PanelPosition::Top,

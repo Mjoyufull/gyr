@@ -83,6 +83,9 @@ Reserve 1-16 terminal columns for icons beside results (default: 4).
 .BR \-\-icon-list-height " " \fIN\fR
 Give each app 1-8 terminal rows when list icons are enabled (default: 2).
 .TP
+.BR \-\-icon-list-vertical-align " " \fIN\fR
+Offset list artwork vertically from -100 to 100 (default: 0). Negative values intentionally overflow into earlier rows instead of cropping the icon.
+.TP
 .B \-\-icon-arrow-before
 Place the selection arrow before a left-side list icon.
 .TP
@@ -218,7 +221,7 @@ hard_stop = false
 
 # Border colors
 main_border_color = "White"
-apps_border_color = "White"
+items_border_color = "White"
 input_border_color = "White"
 
 # Layout

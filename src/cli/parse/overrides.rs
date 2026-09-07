@@ -221,6 +221,24 @@ pub(super) fn parse_cli_overrides(
                             CliError::message("Desktop list icon height must be an integer")
                         })?;
             }
+            Long("icon-list-gap") => {
+                default.desktop_icon_list_gap =
+                    value_as_string(parser, "Desktop list icon gap must be valid UTF-8")?
+                        .parse::<u16>()
+                        .map_err(|_| {
+                            CliError::message("Desktop list icon gap must be an integer")
+                        })?;
+            }
+            Long("icon-list-vertical-align") => {
+                default.desktop_icon_list_vertical_align_percent = value_as_string(
+                    parser,
+                    "Desktop list icon vertical alignment must be valid UTF-8",
+                )?
+                .parse::<i16>()
+                .map_err(|_| {
+                    CliError::message("Desktop list icon vertical alignment must be an integer")
+                })?;
+            }
             Long("icon-arrow-before") => {
                 default.desktop_icon_arrow_before = true;
             }

@@ -1,4 +1,6 @@
-use super::tables::{DESKTOP_CACHE_TABLE, FILE_LIST_TABLE, NAME_INDEX_TABLE};
+use super::tables::{
+    DESKTOP_CACHE_TABLE, FILE_LIST_TABLE, ICON_PATH_CACHE_TABLE, NAME_INDEX_TABLE,
+};
 use crate::desktop::App;
 use eyre::{Result, eyre};
 use redb::{Database, ReadableDatabase, ReadableTable};
@@ -43,6 +45,7 @@ impl DesktopCache {
             let _ = write_txn.open_table(DESKTOP_CACHE_TABLE)?;
             let _ = write_txn.open_table(NAME_INDEX_TABLE)?;
             let _ = write_txn.open_table(FILE_LIST_TABLE)?;
+            let _ = write_txn.open_table(ICON_PATH_CACHE_TABLE)?;
         }
         write_txn.commit()?;
 
@@ -149,10 +152,12 @@ impl DesktopCache {
             let mut cache_table = write_txn.open_table(DESKTOP_CACHE_TABLE)?;
             let mut index_table = write_txn.open_table(NAME_INDEX_TABLE)?;
             let mut file_list_table = write_txn.open_table(FILE_LIST_TABLE)?;
+            let mut icon_path_table = write_txn.open_table(ICON_PATH_CACHE_TABLE)?;
 
             remove_all_rows(&mut cache_table)?;
             remove_all_rows(&mut index_table)?;
             remove_all_rows(&mut file_list_table)?;
+            remove_all_rows(&mut icon_path_table)?;
         }
         write_txn.commit()?;
         Ok(())
@@ -162,7 +167,9 @@ impl DesktopCache {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(FILE_LIST_TABLE)?;
+            let mut icon_path_table = write_txn.open_table(ICON_PATH_CACHE_TABLE)?;
             remove_all_rows(&mut table)?;
+            remove_all_rows(&mut icon_path_table)?;
         }
         write_txn.commit()?;
         Ok(())

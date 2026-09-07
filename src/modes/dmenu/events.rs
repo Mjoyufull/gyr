@@ -1,3 +1,5 @@
+//! Dmenu keyboard and mouse behavior using rendered list geometry.
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::ui::{DmenuUI, Keybinds};
@@ -143,9 +145,7 @@ pub(super) fn handle_mouse_event(
     terminal_height: u16,
 ) -> LoopOutcome {
     let mouse_row = mouse_event.row;
-    let (items_panel_start, items_panel_height) = options.items_panel_bounds(terminal_height);
-    let items_content_start = items_panel_start + 1;
-    let max_visible_rows = items_panel_height.saturating_sub(2);
+    let (items_content_start, max_visible_rows) = options.items_content_bounds(terminal_height);
     let items_content_end = items_content_start + max_visible_rows;
 
     let update_selection_for_mouse_pos = |ui: &mut DmenuUI, mouse_row: u16| {
