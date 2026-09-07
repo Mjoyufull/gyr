@@ -67,7 +67,12 @@ impl AsyncInput {
         config: Config,
     ) -> bool {
         match event {
-            CrosstermEvent::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
+            CrosstermEvent::Key(key)
+                if matches!(
+                    key.kind,
+                    crossterm::event::KeyEventKind::Press | crossterm::event::KeyEventKind::Repeat
+                ) =>
+            {
                 if tx.send(Event::Input(key)).is_err() {
                     return true;
                 }
@@ -239,5 +244,40 @@ impl Input {
         timeout: Duration,
     ) -> Result<Event<KeyEvent>, std_mpsc::RecvTimeoutError> {
         self.rx.recv_timeout(timeout)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AsyncInput, Config, Event};
+    use crossterm::event::{
+        Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+    };
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn async_input_forwards_repeated_keys() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let key = KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, KeyEventKind::Repeat);
+
+        assert!(!AsyncInput::handle_terminal_event(
+            CrosstermEvent::Key(key),
+            &tx,
+            Config::default(),
+        ));
+        assert!(matches!(rx.try_recv(), Ok(Event::Input(received)) if received == key));
+    }
+
+    #[test]
+    fn async_input_ignores_key_release_events() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let key = KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, KeyEventKind::Release);
+
+        assert!(!AsyncInput::handle_terminal_event(
+            CrosstermEvent::Key(key),
+            &tx,
+            Config::default(),
+        ));
+        assert!(rx.try_recv().is_err());
     }
 }

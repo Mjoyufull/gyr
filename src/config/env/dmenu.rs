@@ -6,6 +6,7 @@ use crate::config::{ConfigError, FselConfig};
 
 pub(super) fn apply(cfg: &mut FselConfig, source: &impl OverrideSource) -> Result<(), ConfigError> {
     set_optional_string(source, "FSEL_DMENU_DELIMITER", &mut cfg.dmenu.delimiter);
+    set_optional_string(source, "FSEL_DMENU_PREVIEW", &mut cfg.dmenu.preview);
     set_optional_string(
         source,
         "FSEL_DMENU_PASSWORD_CHARACTER",

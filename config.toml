@@ -132,6 +132,11 @@ prefix_depth = 3
 
 [dmenu]
 
+# Preview command (usually better set per invocation with --preview)
+# Placeholders: {} selected row, {q} query (unset in password mode),
+# {n} zero-based original input ordinal
+# preview = "file --brief {}"
+
 # Colors (optional overrides)
 # highlight_color = "LightBlue"
 # cursor = "█"

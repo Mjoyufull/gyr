@@ -42,6 +42,7 @@ directories = "6.0"
 time = { version = "0.3", features = ["formatting", "local-offset", "macros"] }
 nucleo-matcher = "0.3.1"
 libc = "0.2"
+rustix = { version = "1.1", features = ["process"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 shell-words = "1.1"

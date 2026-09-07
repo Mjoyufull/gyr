@@ -130,6 +130,7 @@ pub struct LayoutConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct DmenuConfig {
     pub delimiter: Option<String>,
+    pub preview: Option<String>,
     pub password_character: Option<String>,
     pub show_line_numbers: Option<bool>,
     pub wrap_long_lines: Option<bool>,

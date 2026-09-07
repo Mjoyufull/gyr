@@ -50,6 +50,44 @@ impl ImageManager {
         self.cache.contains_key(rowid)
     }
 
+    /// Decode image bytes and cache the terminal protocol under `key`.
+    pub async fn load_image_bytes(&mut self, key: &str, bytes: Vec<u8>) -> Result<()> {
+        if self.cache.contains_key(key) {
+            self.update_lru(key);
+            return Ok(());
+        }
+
+        let protocol = Self::prepare_image_bytes(self.picker.clone(), bytes).await?;
+
+        self.insert_protocol(key.to_string(), protocol);
+        Ok(())
+    }
+
+    /// Decode bytes and prepare terminal protocol state off the async executor.
+    pub(crate) async fn prepare_image_bytes(
+        picker: Picker,
+        bytes: Vec<u8>,
+    ) -> Result<StatefulProtocol> {
+        tokio::task::spawn_blocking(move || Self::prepare_image_bytes_blocking(picker, bytes))
+            .await?
+    }
+
+    /// Decode bytes and prepare terminal protocol state from a blocking worker.
+    pub(crate) fn prepare_image_bytes_blocking(
+        picker: Picker,
+        bytes: Vec<u8>,
+    ) -> Result<StatefulProtocol> {
+        let image = image::load_from_memory(&bytes)?;
+        Ok(picker.new_resize_protocol(image))
+    }
+
+    /// Insert a prepared terminal image protocol into the bounded cache.
+    pub fn insert_protocol(&mut self, key: String, protocol: StatefulProtocol) {
+        self.cache.insert(key.clone(), protocol);
+        self.update_lru(&key);
+        self.enforce_cache_capacity();
+    }
+
     /// Set current image to display (must be in cache)
     pub fn set_image(&mut self, rowid: &str) {
         if self.cache.contains_key(rowid) {
@@ -111,23 +149,7 @@ impl ImageManager {
             return Err(eyre!("No data received from cclip get {}", rowid));
         }
 
-        let picker = self.picker.clone();
-        let protocol = tokio::task::spawn_blocking(move || {
-            let dyn_img = image::load_from_memory(&bytes)?;
-            Ok::<_, eyre::Report>(picker.new_resize_protocol(dyn_img))
-        })
-        .await??;
-
-        // Add to cache and set as current
-        self.cache.insert(rowid.to_string(), protocol);
-        self.update_lru(rowid);
-
-        // Enforce cache capacity
-        if self.cache_order.len() > self.cache_capacity
-            && let Some(old_rowid) = self.cache_order.pop_front()
-        {
-            self.cache.remove(&old_rowid);
-        }
+        self.load_image_bytes(rowid, bytes).await?;
 
         Ok(())
     }
@@ -151,11 +173,44 @@ impl ImageManager {
         Ok(())
     }
 
+    /// Render a cached image without changing the manager's current selection.
+    pub fn render_cached(&mut self, f: &mut Frame, key: &str, area: Rect) -> Result<bool> {
+        let encoding_failed = {
+            let Some(protocol) = self.cache.get_mut(key) else {
+                return Ok(false);
+            };
+
+            f.render_stateful_widget(
+                StatefulImage::default().resize(Resize::Fit(None)),
+                area,
+                protocol,
+            );
+            protocol
+                .last_encoding_result()
+                .is_some_and(|result| result.is_err())
+        };
+        if encoding_failed {
+            self.cache.remove(key);
+            self.cache_order.retain(|cached| cached != key);
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
     pub fn clear(&mut self) {
         self.current_rowid = None;
         self.cache.clear();
         self.cache_order.clear();
         self.update_display_state(DisplayState::Empty);
+    }
+
+    fn enforce_cache_capacity(&mut self) {
+        if self.cache_order.len() > self.cache_capacity
+            && let Some(old_key) = self.cache_order.pop_front()
+        {
+            self.cache.remove(&old_key);
+        }
     }
 }
 
@@ -192,5 +247,16 @@ impl GraphicsAdapter {
         } else {
             Self::None
         }
+    }
+
+    /// Build a picker configured for this detected adapter.
+    pub fn picker(self) -> Picker {
+        let mut picker = Picker::halfblocks();
+        match self {
+            Self::Kitty => picker.set_protocol_type(ProtocolType::Kitty),
+            Self::Sixel => picker.set_protocol_type(ProtocolType::Sixel),
+            Self::None => {}
+        }
+        picker
     }
 }

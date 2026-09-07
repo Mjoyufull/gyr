@@ -1,5 +1,6 @@
+use eyre::Result;
 use ratatui::Frame;
-use ratatui::layout::Alignment;
+use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
@@ -9,13 +10,15 @@ use ratatui::widgets::{
 use crate::ui::DmenuUI;
 
 use super::options::DmenuOptions;
+use super::preview::PreviewRuntime;
 
 pub(super) fn draw_frame(
     frame: &mut Frame,
     ui: &mut DmenuUI,
     list_state: &mut ListState,
     options: &DmenuOptions,
-) {
+    preview: &mut PreviewRuntime,
+) -> Result<()> {
     let layout = options.split_layout(frame.area());
     let chunks = layout.chunks;
     let content_panel_index = layout.content_panel_index;
@@ -32,7 +35,7 @@ pub(super) fn draw_frame(
     let content_block = Block::default()
         .borders(Borders::ALL)
         .title(Span::styled(
-            " Content ",
+            preview.title(),
             Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(options.header_title_color),
@@ -40,19 +43,18 @@ pub(super) fn draw_frame(
         .border_type(border_type)
         .border_style(Style::default().fg(options.main_border_color));
 
-    ui.info_with_image_support(
-        options.highlight_color,
-        false,
-        false,
-        chunks[content_panel_index].width,
-        chunks[content_panel_index].height.saturating_sub(2),
-    );
-
-    let content_paragraph = Paragraph::new(ui.text.clone())
-        .block(content_block)
-        .style(Style::default().fg(options.main_text_color))
-        .wrap(Wrap { trim: false })
-        .alignment(Alignment::Left);
+    let default_content_lines = if preview.is_enabled() {
+        None
+    } else {
+        ui.info_with_image_support(
+            options.highlight_color,
+            false,
+            false,
+            chunks[content_panel_index].width,
+            chunks[content_panel_index].height.saturating_sub(2),
+        );
+        Some(ui.text.clone())
+    };
 
     let items_panel_height = chunks[items_panel_index].height;
     let max_visible = items_panel_height.saturating_sub(2) as usize;
@@ -154,10 +156,32 @@ pub(super) fn draw_frame(
     }
 
     if show_content_panel && (!options.hide_before_typing || !ui.query.is_empty()) {
-        frame.render_widget(content_paragraph, chunks[content_panel_index]);
+        let content_area = chunks[content_panel_index];
+        let image_area = Rect {
+            x: content_area.x.saturating_add(1),
+            y: content_area.y.saturating_add(1),
+            width: content_area.width.saturating_sub(2),
+            height: content_area.height.saturating_sub(2),
+        };
+        if preview.render_image(frame, image_area)? {
+            frame.render_widget(content_block, content_area);
+        } else {
+            let content_lines = if preview.is_enabled() {
+                preview.text_lines().unwrap_or_default()
+            } else {
+                default_content_lines.unwrap_or_default()
+            };
+            let content_paragraph = Paragraph::new(content_lines)
+                .block(content_block)
+                .style(Style::default().fg(options.main_text_color))
+                .wrap(Wrap { trim: false })
+                .alignment(Alignment::Left);
+            frame.render_widget(content_paragraph, content_area);
+        }
     }
     if !options.prompt_only && (!options.hide_before_typing || !ui.query.is_empty()) {
         frame.render_stateful_widget(items_list, chunks[items_panel_index], list_state);
     }
     frame.render_widget(input_paragraph, chunks[input_panel_index]);
+    Ok(())
 }

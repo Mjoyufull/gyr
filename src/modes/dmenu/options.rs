@@ -34,6 +34,7 @@ pub(super) struct DmenuOptions {
     pub(super) cursor: String,
     pub(super) term_is_foot: bool,
     pub(super) graphics_adapter: GraphicsAdapter,
+    pub(super) preview_command: Option<String>,
     pub(super) keybinds: Keybinds,
 }
 
@@ -83,6 +84,7 @@ impl DmenuOptions {
                 .unwrap_or_default()
                 .starts_with("foot"),
             graphics_adapter: GraphicsAdapter::detect(None),
+            preview_command: cli.dmenu_preview.clone(),
             keybinds: cli.keybinds.clone(),
         }
     }
@@ -91,6 +93,7 @@ impl DmenuOptions {
         crate::ui::InputConfig {
             disable_mouse: self.disable_mouse,
             exit_key: KeyCode::Null,
+            render_rate: None,
             ..crate::ui::InputConfig::default()
         }
     }

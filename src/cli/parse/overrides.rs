@@ -90,6 +90,13 @@ pub(super) fn parse_cli_overrides(
                 default.dmenu_mode = true;
                 default.dmenu_null_separated = true;
             }
+            Long("preview") => {
+                default.dmenu_mode = true;
+                default.dmenu_preview = Some(value_as_string(
+                    parser,
+                    "Preview command must be valid UTF-8",
+                )?);
+            }
             Long("password") => {
                 default.dmenu_password_mode = true;
                 if let Some(value) = parser.optional_value() {

@@ -141,6 +141,39 @@ git branch | fsel --dmenu
 find . -print0 | fsel --dmenu0
 ```
 
+### Preview Commands
+
+`--preview` accepts a shell command and implies `--dmenu`. Its core fzf-style placeholders are
+passed through dedicated shell environment variables rather than interpolated into command source:
+
+- `{}`: selected input row
+- `{q}`: current query (left unset in password mode so masked input is never exported)
+- `{n}`: zero-based original input ordinal
+
+Place placeholders directly in the command rather than inside single quotes. Heredoc preview
+templates are rejected because their expanded body can become source for another interpreter.
+
+The preview panel renders text output after stripping terminal escape sequences. If stdout contains
+PNG, JPEG, GIF, BMP, or WebP bytes, fsel renders the image using Kitty, Sixel, or its half-block
+fallback.
+
+```sh
+# Text metadata
+find . -type f | fsel --preview 'file --brief {}'
+
+# Syntax-highlighted tools are safe; ANSI color escapes are stripped for the TUI
+find src -name '*.rs' | fsel --preview 'bat --color=always --style=numbers {}'
+
+# Native image preview
+find ~/Pictures -type f | fsel --preview 'cat {}'
+
+# Query and index placeholders
+printf 'one\ntwo\nthree\n' | fsel --preview 'printf "row=%s query=%s" {n} {q}'
+```
+
+Selecting another row cancels the stale preview process. Use `[dmenu]`
+`title_panel_height_percent` and `title_panel_position` to size and place the preview panel.
+
 ### Column Operations
 ```sh
 # Display only column 2

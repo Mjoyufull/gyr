@@ -43,7 +43,7 @@ Usage:
 ├─ Mode-Specific Flags
 │  ├─ Dmenu: --dmenu0 --password[=CHAR] --index --with-nth --accept-nth
 │  ├─        --match-nth --delimiter --only-match --exit-if-empty
-│  ├─        --select --select-index --auto-select --prompt-only
+│  ├─        --select --select-index --auto-select --prompt-only --preview
 │  └─ Cclip: --tag <NAME|list|clear|wipe> --cclip-show-tag-color-names
 │
 └─ Help
@@ -110,7 +110,8 @@ Usage:
 │  ├─ --select <STRING>            Start with the first matching row preselected
 │  ├─ --select-index <N>           Start with row N preselected
 │  ├─ --auto-select                Accept automatically when the filtered list reaches one row
-│  └─ --prompt-only                Show only the input prompt and hide the list pane
+│  ├─ --prompt-only                Show only the input prompt and hide the list pane
+│  └─ --preview <COMMAND>          Preview the selected row; supports {{}}, {{q}}, and {{n}}
 │
 ├─ Clipboard Mode Options
 │  ├─ --tag <NAME>                 Show only clipboard entries tagged NAME
@@ -128,6 +129,7 @@ Usage:
 └─ Notes
    ├─ Pick only one launch method: --launch-prefix, --systemd-run, or --uwsm
    ├─ --dmenu and --cclip both imply --no-exec
+   ├─ --preview implies --dmenu and renders text or image bytes from command stdout
    ├─ --program respects --match-mode: exact requires an exact app or executable name
    ├─ --select and --select-index cannot be combined
    └─ Default config path: ~/.config/fsel/config.toml

@@ -3,6 +3,7 @@
 mod events;
 mod options;
 pub mod parse;
+mod preview;
 mod render;
 pub mod run;
 

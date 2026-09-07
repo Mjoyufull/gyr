@@ -199,4 +199,19 @@ mod tests {
             matches!(error, CliError::Message(message) if message.contains("launch or search"))
         );
     }
+
+    #[test]
+    fn preview_flag_enables_dmenu_mode_and_preserves_command() {
+        let command = parse_with_config(
+            &args(&["fsel", "--preview", "cat {}"]),
+            FselConfig::default(),
+        )
+        .unwrap();
+
+        let CliCommand::Run(opts) = command else {
+            panic!("expected run command");
+        };
+        assert!(opts.dmenu_mode);
+        assert_eq!(opts.dmenu_preview.as_deref(), Some("cat {}"));
+    }
 }

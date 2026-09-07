@@ -6,7 +6,7 @@ use crate::ui::{DISPLAY_STATE, DisplayState, DmenuUI, ImageManager, TagMode};
 use eyre::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui_image::picker::{Picker, ProtocolType};
+use ratatui_image::picker::Picker;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
@@ -40,11 +40,8 @@ impl ImageRuntime {
         let supports_graphics = !matches!(detected_adapter, crate::ui::GraphicsAdapter::None);
         let image_preview_enabled =
             image_preview_allowed && options.image_preview_enabled(supports_graphics);
-        let image_manager = image_preview_enabled.then(|| {
-            Arc::new(Mutex::new(ImageManager::new(picker_for_adapter(
-                detected_adapter,
-            ))))
-        });
+        let image_manager = image_preview_enabled
+            .then(|| Arc::new(Mutex::new(ImageManager::new(detected_adapter.picker()))));
         let failed_rowids = Arc::new(Mutex::new(HashSet::<String>::new()));
         let (redraw_tx, redraw_rx) = mpsc::unbounded_channel::<()>();
 
@@ -222,16 +219,6 @@ impl ImageRuntime {
             .unwrap_or_else(|error| error.into_inner());
         *state = DisplayState::Empty;
     }
-}
-
-fn picker_for_adapter(adapter: crate::ui::GraphicsAdapter) -> Picker {
-    let mut picker = Picker::halfblocks();
-    match adapter {
-        crate::ui::GraphicsAdapter::Kitty => picker.set_protocol_type(ProtocolType::Kitty),
-        crate::ui::GraphicsAdapter::Sixel => picker.set_protocol_type(ProtocolType::Sixel),
-        crate::ui::GraphicsAdapter::None => {}
-    }
-    picker
 }
 
 fn selected_image_rowid(ui: &DmenuUI<'_>) -> Option<String> {

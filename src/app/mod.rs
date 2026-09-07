@@ -30,7 +30,8 @@ pub(crate) fn run() -> eyre::Result<ExitCode> {
     };
 
     if cli.dmenu_mode {
-        modes::dmenu::run(&cli)?;
+        let rt = tokio::runtime::Runtime::new().wrap_err("Failed to create tokio runtime")?;
+        rt.block_on(modes::dmenu::run(&cli))?;
         return Ok(ExitCode::SUCCESS);
     }
 

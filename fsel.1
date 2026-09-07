@@ -93,6 +93,9 @@ Dmenu mode: read from stdin, output selection to stdout
 .B \-\-dmenu0
 Like --dmenu but null-separated input
 .TP
+.BR \-\-preview " " \fICOMMAND\fR
+Run COMMAND for the selected input row and show its stdout in the preview panel. This option implies --dmenu. The fzf-style placeholders {} (selected row), {q} (query), and {n} (zero-based original input ordinal) are passed through dedicated shell environment variables rather than interpolated into shell source. In password mode, the query variable is left unset so masked input is not exported. Place placeholders directly in COMMAND, not inside single quotes. Heredoc templates are rejected. Text and common raster image output are supported.
+.TP
 .BR \-\-password [=\fICHAR\fR]
 Password mode: mask input (default char: *)
 .TP
@@ -214,6 +217,7 @@ prefix_depth = 3
 [dmenu]
 delimiter = " "
 show_line_numbers = true
+# preview = "file --brief {}"
 
 # Clipboard mode overrides (optional)
 [cclip]
@@ -392,6 +396,13 @@ Basic dmenu replacement:
 .nf
 .RS
 echo -e "Option 1\\nOption 2\\nOption 3" | fsel --dmenu
+.RE
+.fi
+.TP
+Preview files with a shell command:
+.nf
+.RS
+find . -type f | fsel --preview 'file --brief {}'
 .RE
 .fi
 .TP

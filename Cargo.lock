@@ -421,6 +421,7 @@ dependencies = [
  "ratatui-image",
  "rayon",
  "redb",
+ "rustix 1.1.4",
  "scopeguard",
  "serde",
  "serde_json",

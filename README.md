@@ -239,9 +239,15 @@ echo "foo:bar:baz" | fsel --dmenu --delimiter ":"
 ls -la | fsel --dmenu
 find . -name "*.rs" | fsel --dmenu
 git log --oneline | fsel --dmenu
+
+# fzf-style preview command ({} is the selected row, passed via the environment)
+find . -type f | fsel --preview 'file --brief {}'
+
+# Preview image bytes with Kitty, Sixel, or the half-block fallback
+find ~/Pictures -type f | fsel --preview 'cat {}'
 ```
 
-See [USAGE.md - Dmenu Mode](./USAGE.md#dmenu-mode) for column operations, password input, pre-selection, exact matching, `--dmenu0`, and prompt-only mode.
+See [USAGE.md - Dmenu Mode](./USAGE.md#dmenu-mode) for previews, column operations, password input, pre-selection, exact matching, `--dmenu0`, and prompt-only mode.
 
 ### Clipboard History Mode
 Requires [cclip](https://github.com/heather7283/cclip).
