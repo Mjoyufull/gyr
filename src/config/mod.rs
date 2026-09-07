@@ -95,8 +95,8 @@ mod tests {
     use super::{
         ConfigError, ConfigValidationError, FselConfig, load_config_file, load_standalone_keybinds,
     };
-    use crate::cli::{MatchMode, PinnedOrderMode, RankingMode};
-    use crate::ui::PanelPosition;
+    use crate::cli::{DesktopIconMode, MatchMode, PinnedOrderMode, RankingMode};
+    use crate::ui::{HorizontalPosition, PanelPosition};
     use crossterm::event::{KeyCode, KeyModifiers};
     use std::fs;
 
@@ -260,6 +260,8 @@ title_panel_position = "Top"
 match_mode = "FuZzY"
 ranking_mode = "RECENCY"
 pinned_order = "OLDEST_PINNED"
+icon_mode = "PREVIEW"
+icon_position = "LEFT"
 
 [dmenu]
 title_panel_position = "Bottom"
@@ -280,6 +282,14 @@ title_panel_position = "Middle"
         assert_eq!(
             config.app_launcher.pinned_order,
             Some(PinnedOrderMode::OldestPinned)
+        );
+        assert_eq!(
+            config.app_launcher.icon_mode,
+            Some(DesktopIconMode::Preview)
+        );
+        assert_eq!(
+            config.app_launcher.icon_position,
+            Some(HorizontalPosition::Left)
         );
         assert_eq!(
             config.dmenu.title_panel_position,

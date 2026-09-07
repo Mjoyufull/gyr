@@ -19,7 +19,7 @@ pub(crate) enum CliCommand {
 
 pub use crate::ui::PanelPosition;
 pub use color::string_to_color;
-pub use types::{MatchMode, Opts, PinnedOrderMode, RankingMode};
+pub use types::{DesktopIconMode, MatchMode, Opts, PinnedOrderMode, RankingMode};
 
 pub(crate) use help::{detailed_usage, short_usage};
 pub(crate) use parse::parse;

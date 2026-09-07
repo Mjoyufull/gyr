@@ -260,6 +260,16 @@ fn deserialize_cache_entry(data: &[u8]) -> Option<CacheEntry> {
 }
 
 fn cache_entry_is_fresh(path: &Path, entry: &CacheEntry) -> bool {
+    // Icon values containing desktop-entry escapes predate icon normalization.
+    // Reparse those rows so the resolver never receives a stale raw value.
+    if entry
+        .app
+        .icon
+        .as_deref()
+        .is_some_and(|icon| icon.contains('\\'))
+    {
+        return false;
+    }
     if let Ok(metadata) = fs::metadata(path)
         && let Ok(mtime) = metadata.modified()
     {
@@ -469,6 +479,34 @@ mod tests {
 
         assert_eq!(loaded_by_name.name, app.name);
         assert_eq!(loaded_by_path.command, app.command);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn escaped_cached_icons_are_invalidated_for_reparsing() {
+        let dir = test_temp_dir("escaped-icon");
+        let db_path = dir.join("desktop-cache.redb");
+        let db = Arc::new(redb::Database::create(&db_path).expect("database should be created"));
+        let cache = DesktopCache::new(Arc::clone(&db)).expect("desktop cache should initialize");
+        let desktop_path = dir.join("escaped.desktop");
+        fs::write(
+            &desktop_path,
+            "[Desktop Entry]\nType=Application\nName=EscapedIcon\nExec=/bin/true\nIcon=/opt/My\\sApp/icon.png\n",
+        )
+        .expect("desktop entry should be written");
+        let mut app = sample_app("EscapedIcon");
+        app.icon = Some("/opt/My\\sApp/icon.png".to_string());
+        cache
+            .set(&desktop_path, app)
+            .expect("cache set should succeed");
+
+        assert!(
+            cache
+                .get(&desktop_path)
+                .expect("cache lookup should succeed")
+                .is_none()
+        );
 
         let _ = fs::remove_dir_all(dir);
     }

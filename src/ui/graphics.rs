@@ -2,10 +2,11 @@ use eyre::{Result, eyre};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui_image::picker::{Picker, ProtocolType};
-use ratatui_image::protocol::StatefulProtocol;
-use ratatui_image::{Resize, StatefulImage};
+use ratatui_image::protocol::{Protocol, StatefulProtocol};
+use ratatui_image::{Image, Resize, StatefulImage};
 use std::collections::{HashMap, VecDeque};
 use std::io::{Cursor, Read};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -16,6 +17,9 @@ const MAX_SVG_PROBE_BYTES: u64 = 64 * 1024;
 const MAX_SVG_EMBEDDED_RASTER_DIMENSION: u32 = 4096;
 const MAX_SVG_EMBEDDED_RASTER_PIXELS: u64 = 2048 * 2048;
 const SVG_NAMESPACE: &str = "http://www.w3.org/2000/svg";
+const MAX_IMAGE_FILE_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_ICON_RASTER_DIMENSION: u32 = 4096;
+const MAX_ICON_DECODED_BYTES: u64 = 64 * 1024 * 1024;
 static SVG_FONT_DATABASE: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
 
 /// Combined display state to track what's currently on screen
@@ -38,9 +42,17 @@ pub static DISPLAY_STATE: Mutex<DisplayState> = Mutex::new(DisplayState::Empty);
 pub struct ImageManager {
     picker: Picker,
     current_rowid: Option<String>,
-    cache: HashMap<String, StatefulProtocol>,
+    cache: HashMap<String, CachedProtocol>,
+    cache_weights: HashMap<String, u64>,
     cache_order: VecDeque<String>,
     cache_capacity: usize,
+    cache_weight: u64,
+    cache_weight_capacity: u64,
+}
+
+enum CachedProtocol {
+    Fixed(Protocol),
+    Resizable(StatefulProtocol),
 }
 
 impl ImageManager {
@@ -50,9 +62,19 @@ impl ImageManager {
             picker,
             current_rowid: None,
             cache: HashMap::new(),
+            cache_weights: HashMap::new(),
             cache_order: VecDeque::new(),
             cache_capacity: 50,
+            cache_weight: 0,
+            cache_weight_capacity: u64::MAX,
         }
+    }
+
+    /// Limit the retained decoded image data while preserving the entry-count bound.
+    pub(crate) fn with_cache_weight_limit(mut self, capacity: u64) -> Self {
+        self.cache_weight_capacity = capacity;
+        self.enforce_cache_capacity();
+        self
     }
 
     /// Check if an image is already in cache
@@ -91,6 +113,61 @@ impl ImageManager {
         Ok(picker.new_resize_protocol(image))
     }
 
+    /// Read and prepare an image file from a blocking worker.
+    #[cfg(test)]
+    pub(crate) fn prepare_image_path(picker: Picker, path: &Path) -> Result<StatefulProtocol> {
+        let (image, _) = read_icon_image(path)?;
+        Ok(picker.new_resize_protocol(image))
+    }
+
+    /// Read, resize, and encode an icon for a fixed terminal-cell area.
+    pub(crate) fn prepare_fixed_image_path_with_weight(
+        picker: Picker,
+        path: &Path,
+        area: Rect,
+        horizontal_align: u16,
+        vertical_align: u16,
+    ) -> Result<(Protocol, u64)> {
+        let (image, _) = read_icon_image(path)?;
+        let (font_width, font_height) = picker.font_size();
+        let pixel_width = u32::from(area.width).saturating_mul(u32::from(font_width));
+        let pixel_height = u32::from(area.height).saturating_mul(u32::from(font_height));
+        let image = normalize_desktop_icon(
+            image,
+            pixel_width,
+            pixel_height,
+            horizontal_align,
+            vertical_align,
+        );
+        let retained_bytes = u64::from(area.width)
+            .saturating_mul(u64::from(font_width))
+            .saturating_mul(u64::from(area.height))
+            .saturating_mul(u64::from(font_height))
+            .saturating_mul(4);
+        let protocol = picker.new_protocol(image, area, Resize::Scale(None))?;
+        Ok((protocol, retained_bytes))
+    }
+
+    /// Insert a fixed-size protocol prepared by a desktop-icon worker.
+    pub(crate) fn insert_fixed_protocol_with_weight(
+        &mut self,
+        key: String,
+        protocol: Protocol,
+        weight: u64,
+    ) {
+        self.insert_cached_protocol(key, CachedProtocol::Fixed(protocol), weight);
+    }
+
+    fn insert_cached_protocol(&mut self, key: String, protocol: CachedProtocol, weight: u64) {
+        if let Some(previous) = self.cache_weights.insert(key.clone(), weight) {
+            self.cache_weight = self.cache_weight.saturating_sub(previous);
+        }
+        self.cache_weight = self.cache_weight.saturating_add(weight);
+        self.cache.insert(key.clone(), protocol);
+        self.update_lru(&key);
+        self.enforce_cache_capacity();
+    }
+
     /// Return whether bytes have a supported raster signature or contain SVG markup.
     pub fn recognizes_image_bytes(bytes: &[u8]) -> bool {
         image::guess_format(bytes).is_ok() || looks_like_svg(bytes)
@@ -98,9 +175,17 @@ impl ImageManager {
 
     /// Insert a prepared terminal image protocol into the bounded cache.
     pub fn insert_protocol(&mut self, key: String, protocol: StatefulProtocol) {
-        self.cache.insert(key.clone(), protocol);
-        self.update_lru(&key);
-        self.enforce_cache_capacity();
+        self.insert_protocol_with_weight(key, protocol, 0);
+    }
+
+    /// Insert a protocol and account for the decoded image bytes it retains.
+    pub(crate) fn insert_protocol_with_weight(
+        &mut self,
+        key: String,
+        protocol: StatefulProtocol,
+        weight: u64,
+    ) {
+        self.insert_cached_protocol(key, CachedProtocol::Resizable(protocol), weight);
     }
 
     /// Set current image to display (must be in cache)
@@ -174,15 +259,18 @@ impl ImageManager {
         if let Some(rowid) = &self.current_rowid
             && let Some(protocol) = self.cache.get_mut(rowid)
         {
-            f.render_stateful_widget(
-                StatefulImage::default().resize(Resize::Fit(None)),
-                area,
-                protocol,
-            );
-
-            // Propagate encoding/resize errors
-            if let Some(Err(e)) = protocol.last_encoding_result() {
-                return Err(eyre!("Image encoding failed: {}", e));
+            match protocol {
+                CachedProtocol::Fixed(protocol) => f.render_widget(Image::new(protocol), area),
+                CachedProtocol::Resizable(protocol) => {
+                    f.render_stateful_widget(
+                        StatefulImage::default().resize(Resize::Fit(None)),
+                        area,
+                        protocol,
+                    );
+                    if let Some(Err(error)) = protocol.last_encoding_result() {
+                        return Err(eyre!("Image encoding failed: {error}"));
+                    }
+                }
             }
         }
         Ok(())
@@ -195,18 +283,25 @@ impl ImageManager {
                 return Ok(false);
             };
 
-            f.render_stateful_widget(
-                StatefulImage::default().resize(Resize::Fit(None)),
-                area,
-                protocol,
-            );
-            protocol
-                .last_encoding_result()
-                .is_some_and(|result| result.is_err())
+            match protocol {
+                CachedProtocol::Fixed(protocol) => {
+                    f.render_widget(Image::new(protocol), area);
+                    false
+                }
+                CachedProtocol::Resizable(protocol) => {
+                    f.render_stateful_widget(
+                        StatefulImage::default().resize(Resize::Fit(None)),
+                        area,
+                        protocol,
+                    );
+                    protocol
+                        .last_encoding_result()
+                        .is_some_and(|result| result.is_err())
+                }
+            }
         };
         if encoding_failed {
-            self.cache.remove(key);
-            self.cache_order.retain(|cached| cached != key);
+            self.remove_cached(key);
             return Ok(false);
         }
 
@@ -216,17 +311,108 @@ impl ImageManager {
     pub fn clear(&mut self) {
         self.current_rowid = None;
         self.cache.clear();
+        self.cache_weights.clear();
         self.cache_order.clear();
+        self.cache_weight = 0;
         self.update_display_state(DisplayState::Empty);
     }
 
     fn enforce_cache_capacity(&mut self) {
-        if self.cache_order.len() > self.cache_capacity
-            && let Some(old_key) = self.cache_order.pop_front()
+        while self.cache_order.len() > self.cache_capacity
+            || self.cache_weight > self.cache_weight_capacity
         {
-            self.cache.remove(&old_key);
+            let Some(old_key) = self.cache_order.front().cloned() else {
+                break;
+            };
+            self.remove_cached(&old_key);
         }
     }
+
+    fn remove_cached(&mut self, key: &str) {
+        self.cache.remove(key);
+        if let Some(weight) = self.cache_weights.remove(key) {
+            self.cache_weight = self.cache_weight.saturating_sub(weight);
+        }
+        self.cache_order.retain(|cached| cached != key);
+    }
+}
+
+fn normalize_desktop_icon(
+    image: image::DynamicImage,
+    target_width: u32,
+    target_height: u32,
+    horizontal_align: u16,
+    vertical_align: u16,
+) -> image::DynamicImage {
+    let source = image.into_rgba8();
+    let mut bounds = None::<(u32, u32, u32, u32)>;
+    for (x, y, pixel) in source.enumerate_pixels() {
+        if pixel[3] <= 8 {
+            continue;
+        }
+        bounds = Some(bounds.map_or((x, y, x, y), |(left, top, right, bottom)| {
+            (left.min(x), top.min(y), right.max(x), bottom.max(y))
+        }));
+    }
+
+    let mut canvas = image::RgbaImage::new(target_width.max(1), target_height.max(1));
+    let Some((left, top, right, bottom)) = bounds else {
+        return image::DynamicImage::ImageRgba8(canvas);
+    };
+    let source_width = right - left + 1;
+    let source_height = bottom - top + 1;
+    let cropped =
+        image::imageops::crop_imm(&source, left, top, source_width, source_height).to_image();
+
+    // A small common inset makes differently padded source files occupy the same visual box.
+    let max_width = target_width.saturating_mul(88).div_ceil(100).max(1);
+    let max_height = target_height.saturating_mul(88).div_ceil(100).max(1);
+    let (width, height) = if u64::from(max_width) * u64::from(source_height)
+        <= u64::from(max_height) * u64::from(source_width)
+    {
+        let height = u64::from(source_height)
+            .saturating_mul(u64::from(max_width))
+            .div_ceil(u64::from(source_width)) as u32;
+        (max_width, height.max(1))
+    } else {
+        let width = u64::from(source_width)
+            .saturating_mul(u64::from(max_height))
+            .div_ceil(u64::from(source_height)) as u32;
+        (width.max(1), max_height)
+    };
+    let resized = image::imageops::resize(
+        &cropped,
+        width,
+        height,
+        image::imageops::FilterType::Triangle,
+    );
+    let x = target_width
+        .saturating_sub(width)
+        .saturating_mul(u32::from(horizontal_align.min(100)))
+        / 100;
+    let y = target_height
+        .saturating_sub(height)
+        .saturating_mul(u32::from(vertical_align.min(100)))
+        / 100;
+    image::imageops::overlay(&mut canvas, &resized, i64::from(x), i64::from(y));
+    image::DynamicImage::ImageRgba8(canvas)
+}
+
+fn read_icon_image(path: &Path) -> Result<(image::DynamicImage, u64)> {
+    let file = std::fs::File::open(path)?;
+    let file_size = file.metadata()?.len();
+    if file_size > MAX_IMAGE_FILE_BYTES {
+        return Err(eyre!("Image file exceeds {} bytes", MAX_IMAGE_FILE_BYTES));
+    }
+    let mut bytes = Vec::with_capacity(file_size as usize);
+    file.take(MAX_IMAGE_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_IMAGE_FILE_BYTES {
+        return Err(eyre!("Image file exceeds {} bytes", MAX_IMAGE_FILE_BYTES));
+    }
+    let image = decode_icon_image(&bytes)?;
+    let decoded_bytes = image.as_bytes().len() as u64;
+    Ok((image, decoded_bytes))
 }
 
 fn decode_image(bytes: &[u8]) -> Result<image::DynamicImage> {
@@ -236,6 +422,211 @@ fn decode_image(bytes: &[u8]) -> Result<image::DynamicImage> {
             .map_err(|svg_error| eyre!("Image decode failed: {raster_error}; {svg_error}")),
         Err(error) => Err(error.into()),
     }
+}
+
+fn decode_icon_image(bytes: &[u8]) -> Result<image::DynamicImage> {
+    if looks_like_svg(bytes) {
+        return decode_svg(bytes);
+    }
+    if looks_like_xpm(bytes) {
+        return decode_xpm(bytes);
+    }
+
+    let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_ICON_RASTER_DIMENSION);
+    limits.max_image_height = Some(MAX_ICON_RASTER_DIMENSION);
+    limits.max_alloc = Some(MAX_ICON_DECODED_BYTES);
+    reader.limits(limits);
+    Ok(reader.decode()?)
+}
+
+fn looks_like_xpm(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).is_ok_and(|text| {
+        let text = text.trim_start_matches('\u{feff}').trim_start();
+        text.starts_with("/* XPM */") || text.starts_with("! XPM2")
+    })
+}
+
+fn decode_xpm(bytes: &[u8]) -> Result<image::DynamicImage> {
+    let text = std::str::from_utf8(bytes).map_err(|error| eyre!("Invalid XPM text: {error}"))?;
+    let strings = if text
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .starts_with("! XPM2")
+    {
+        text.lines()
+            .skip_while(|line| !line.trim_start().starts_with("! XPM2"))
+            .skip(1)
+            .map(str::trim_end)
+            .filter(|line| !line.trim_start().starts_with('!'))
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    } else {
+        extract_c_strings(text)?
+    };
+    let header = strings
+        .first()
+        .ok_or_else(|| eyre!("XPM does not contain a header"))?;
+    let mut header_fields = header.split_whitespace();
+    let width = parse_xpm_number(header_fields.next(), "width")?;
+    let height = parse_xpm_number(header_fields.next(), "height")?;
+    let color_count = parse_xpm_number(header_fields.next(), "color count")? as usize;
+    let chars_per_pixel = parse_xpm_number(header_fields.next(), "characters per pixel")? as usize;
+    if width == 0 || height == 0 || color_count == 0 || chars_per_pixel == 0 {
+        return Err(eyre!(
+            "XPM dimensions, colors, and characters per pixel must be non-zero"
+        ));
+    }
+    if width > MAX_ICON_RASTER_DIMENSION || height > MAX_ICON_RASTER_DIMENSION {
+        return Err(eyre!("XPM dimensions exceed the icon decode limit"));
+    }
+    let decoded_bytes = u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| eyre!("XPM dimensions overflow"))?;
+    if decoded_bytes > MAX_ICON_DECODED_BYTES {
+        return Err(eyre!("XPM decoded image exceeds the memory limit"));
+    }
+    let expected_strings = 1usize
+        .checked_add(color_count)
+        .and_then(|count| count.checked_add(height as usize))
+        .ok_or_else(|| eyre!("XPM entry count overflow"))?;
+    if strings.len() < expected_strings {
+        return Err(eyre!("XPM is missing color or pixel rows"));
+    }
+
+    let mut colors = HashMap::<Vec<u8>, [u8; 4]>::with_capacity(color_count);
+    for line in &strings[1..=color_count] {
+        if line.len() < chars_per_pixel || !line.is_char_boundary(chars_per_pixel) {
+            return Err(eyre!("XPM color key is shorter than declared"));
+        }
+        let key = line.as_bytes()[..chars_per_pixel].to_vec();
+        let color = xpm_color_value(&line[chars_per_pixel..])?;
+        colors.insert(key, color);
+    }
+
+    let row_bytes = (width as usize)
+        .checked_mul(chars_per_pixel)
+        .ok_or_else(|| eyre!("XPM row width overflow"))?;
+    let mut pixels = Vec::with_capacity(decoded_bytes as usize);
+    for row in &strings[1 + color_count..expected_strings] {
+        if row.len() != row_bytes {
+            return Err(eyre!("XPM pixel row has an unexpected width"));
+        }
+        for key in row.as_bytes().chunks_exact(chars_per_pixel) {
+            let color = colors
+                .get(key)
+                .ok_or_else(|| eyre!("XPM pixel uses an undefined color key"))?;
+            pixels.extend_from_slice(color);
+        }
+    }
+    let image = image::RgbaImage::from_raw(width, height, pixels)
+        .ok_or_else(|| eyre!("Failed to construct decoded XPM image"))?;
+    Ok(image::DynamicImage::ImageRgba8(image))
+}
+
+fn parse_xpm_number(value: Option<&str>, field: &str) -> Result<u32> {
+    value
+        .ok_or_else(|| eyre!("XPM header is missing {field}"))?
+        .parse()
+        .map_err(|error| eyre!("Invalid XPM {field}: {error}"))
+}
+
+fn xpm_color_value(specification: &str) -> Result<[u8; 4]> {
+    let fields = specification.split_whitespace().collect::<Vec<_>>();
+    let color_index = fields
+        .iter()
+        .position(|field| field.eq_ignore_ascii_case("c"))
+        .ok_or_else(|| eyre!("XPM color entry has no color field"))?;
+    let end = fields[color_index + 1..]
+        .iter()
+        .position(|field| {
+            ["s", "m", "g4", "g", "c"]
+                .iter()
+                .any(|name| field.eq_ignore_ascii_case(name))
+        })
+        .map_or(fields.len(), |offset| color_index + 1 + offset);
+    let value = fields[color_index + 1..end].join("");
+    if value.is_empty() {
+        return Err(eyre!("XPM color field is empty"));
+    }
+    if value.eq_ignore_ascii_case("none") {
+        return Ok([0, 0, 0, 0]);
+    }
+    if let Some(color) = parse_extended_xpm_hex(&value) {
+        return Ok(color);
+    }
+    let lowercase = value.to_ascii_lowercase();
+    if let Some(gray) = lowercase
+        .strip_prefix("gray")
+        .or_else(|| lowercase.strip_prefix("grey"))
+        .and_then(|percent| percent.parse::<u8>().ok())
+        .filter(|percent| *percent <= 100)
+    {
+        let channel = ((u16::from(gray) * 255 + 50) / 100) as u8;
+        return Ok([channel, channel, channel, 255]);
+    }
+    let color = value
+        .parse::<svgtypes::Color>()
+        .map_err(|error| eyre!("Unsupported XPM color {value:?}: {error}"))?;
+    Ok([color.red, color.green, color.blue, color.alpha])
+}
+
+fn parse_extended_xpm_hex(value: &str) -> Option<[u8; 4]> {
+    let hex = value.strip_prefix('#')?;
+    let component_width = match hex.len() {
+        3 | 6 => return None,
+        9 => 3,
+        12 => 4,
+        _ => return None,
+    };
+    let mut color = [0_u8; 4];
+    color[3] = 255;
+    for (index, channel) in color[..3].iter_mut().enumerate() {
+        let start = index * component_width;
+        *channel = u8::from_str_radix(&hex[start..start + 2], 16).ok()?;
+    }
+    Some(color)
+}
+
+fn extract_c_strings(text: &str) -> Result<Vec<String>> {
+    let mut strings = Vec::new();
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character != '"' {
+            continue;
+        }
+        let mut value = String::new();
+        let mut closed = false;
+        while let Some(character) = characters.next() {
+            match character {
+                '"' => {
+                    closed = true;
+                    break;
+                }
+                '\\' => {
+                    let escaped = characters
+                        .next()
+                        .ok_or_else(|| eyre!("XPM string ends after an escape"))?;
+                    match escaped {
+                        '\\' | '"' => value.push(escaped),
+                        'n' => value.push('\n'),
+                        'r' => value.push('\r'),
+                        't' => value.push('\t'),
+                        '\n' => {}
+                        other => value.push(other),
+                    }
+                }
+                other => value.push(other),
+            }
+        }
+        if !closed {
+            return Err(eyre!("XPM contains an unterminated string"));
+        }
+        strings.push(value);
+    }
+    Ok(strings)
 }
 
 fn looks_like_svg(bytes: &[u8]) -> bool {
@@ -601,13 +992,95 @@ impl GraphicsAdapter {
 #[cfg(test)]
 mod tests {
     use super::{
-        ImageManager, bounded_svg_document, decode_image, has_svg_document_root, looks_like_svg,
-        svg_needs_fonts, svg_options, unpremultiply_rgba,
+        ImageManager, MAX_IMAGE_FILE_BYTES, bounded_svg_document, decode_icon_image, decode_image,
+        decode_xpm, has_svg_document_root, looks_like_svg, normalize_desktop_icon, svg_needs_fonts,
+        svg_options, unpremultiply_rgba,
     };
     use flate2::Compression;
     use flate2::write::GzEncoder;
+    use ratatui_image::picker::Picker;
     use std::io::{Cursor, Write};
     use std::sync::Arc;
+
+    fn alpha_bounds(image: &image::DynamicImage) -> (u32, u32, u32, u32) {
+        let image = image.to_rgba8();
+        let points = image
+            .enumerate_pixels()
+            .filter(|(_, _, pixel)| pixel[3] > 8)
+            .map(|(x, y, _)| (x, y))
+            .collect::<Vec<_>>();
+        let left = points.iter().map(|(x, _)| *x).min().expect("visible pixel");
+        let top = points.iter().map(|(_, y)| *y).min().expect("visible pixel");
+        let right = points.iter().map(|(x, _)| *x).max().expect("visible pixel");
+        let bottom = points.iter().map(|(_, y)| *y).max().expect("visible pixel");
+        (left, top, right, bottom)
+    }
+
+    #[test]
+    fn desktop_icons_with_different_source_padding_share_one_visual_box() {
+        let mut padded = image::RgbaImage::new(64, 64);
+        for pixel in padded.enumerate_pixels_mut() {
+            let (x, y, pixel) = pixel;
+            if (24..40).contains(&x) && (24..40).contains(&y) {
+                *pixel = image::Rgba([255, 255, 255, 255]);
+            }
+        }
+        let full = image::RgbaImage::from_pixel(128, 128, image::Rgba([255, 255, 255, 255]));
+
+        let padded =
+            normalize_desktop_icon(image::DynamicImage::ImageRgba8(padded), 100, 100, 50, 50);
+        let full = normalize_desktop_icon(image::DynamicImage::ImageRgba8(full), 100, 100, 50, 50);
+
+        assert_eq!(alpha_bounds(&padded), (6, 6, 93, 93));
+        assert_eq!(alpha_bounds(&full), alpha_bounds(&padded));
+    }
+
+    #[test]
+    fn desktop_icon_alignment_uses_the_available_canvas_space() {
+        let source = image::RgbaImage::from_pixel(10, 10, image::Rgba([255, 255, 255, 255]));
+        let left = normalize_desktop_icon(
+            image::DynamicImage::ImageRgba8(source.clone()),
+            100,
+            100,
+            0,
+            0,
+        );
+        let centered = normalize_desktop_icon(
+            image::DynamicImage::ImageRgba8(source.clone()),
+            100,
+            100,
+            50,
+            50,
+        );
+        let right =
+            normalize_desktop_icon(image::DynamicImage::ImageRgba8(source), 100, 100, 100, 100);
+
+        assert_eq!(alpha_bounds(&left), (0, 0, 87, 87));
+        assert_eq!(alpha_bounds(&centered), (6, 6, 93, 93));
+        assert_eq!(alpha_bounds(&right), (12, 12, 99, 99));
+    }
+
+    #[test]
+    fn weighted_cache_evicts_oldest_decoded_image() {
+        let picker = Picker::halfblocks();
+        let mut manager = ImageManager::new(picker.clone()).with_cache_weight_limit(4);
+        manager.insert_protocol_with_weight(
+            "first".to_string(),
+            picker
+                .clone()
+                .new_resize_protocol(image::DynamicImage::new_rgba8(1, 1)),
+            4,
+        );
+        manager.insert_protocol_with_weight(
+            "second".to_string(),
+            picker.new_resize_protocol(image::DynamicImage::new_rgba8(1, 1)),
+            4,
+        );
+
+        assert!(!manager.is_cached("first"));
+        assert!(manager.is_cached("second"));
+        assert_eq!(manager.cache_weight, 4);
+    }
 
     #[test]
     fn decodes_svg_bytes_into_rgba_image() {
@@ -636,6 +1109,29 @@ mod tests {
         assert!(svg_needs_fonts(
             br#"<!DOCTYPE svg [<!ENTITY label "<text>label</text>">]><svg>&label;</svg>"#
         ));
+    }
+
+    #[test]
+    fn decodes_xpm_icons_with_named_and_transparent_colors() {
+        let xpm = br#"/* XPM */
+static char *icon[] = {
+"2 2 3 1",
+". c #ff0000",
+"  c None",
+"+ c navy",
+".+",
+" ."
+};
+"#;
+
+        let image = decode_xpm(xpm).expect("XPM should decode").to_rgba8();
+
+        assert_eq!(image.dimensions(), (2, 2));
+        assert_eq!(image.get_pixel(0, 0).0, [255, 0, 0, 255]);
+        assert_eq!(image.get_pixel(1, 0).0, [0, 0, 128, 255]);
+        assert_eq!(image.get_pixel(0, 1).0, [0, 0, 0, 0]);
+        assert_eq!(image.get_pixel(1, 1).0, [255, 0, 0, 255]);
+        assert!(decode_icon_image(xpm).is_ok());
     }
 
     #[test]
@@ -749,6 +1245,33 @@ mod tests {
         assert!(resolve("image/png", Arc::clone(&data), &options).is_some());
         assert!(resolve("image/png", Arc::clone(&data), &options).is_some());
         assert!(resolve("image/png", data, &options).is_none());
+    }
+
+    #[test]
+    fn image_path_read_rejects_oversized_files() {
+        let path = std::env::temp_dir().join(format!("fsel-oversized-icon-{}", std::process::id()));
+        let file = std::fs::File::create(&path).expect("sparse test file should be created");
+        file.set_len(MAX_IMAGE_FILE_BYTES + 1)
+            .expect("sparse test file should be sized");
+
+        let error =
+            ImageManager::prepare_image_path(ratatui_image::picker::Picker::halfblocks(), &path)
+                .err()
+                .expect("oversized image should be rejected");
+
+        assert!(error.to_string().contains("exceeds"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn icon_decode_rejects_oversized_raster_dimensions() {
+        let image = image::DynamicImage::new_rgba8(4097, 1);
+        let mut encoded = Cursor::new(Vec::new());
+        image
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .expect("test PNG should encode");
+
+        assert!(decode_icon_image(encoded.get_ref()).is_err());
     }
 
     #[test]

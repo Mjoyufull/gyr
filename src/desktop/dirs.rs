@@ -28,30 +28,33 @@ fn application_dirs_from_sources(
         push_applications_dir(&mut dirs, home_dir.join(".local/share"));
     }
 
-    if let Some(xdg_data_dirs) = xdg_data_dirs {
-        for data_dir in xdg_data_dirs.split(':').filter(|entry| !entry.is_empty()) {
-            push_applications_dir(&mut dirs, PathBuf::from(data_dir));
-        }
-    } else {
-        #[cfg(not(target_os = "openbsd"))]
-        let default_paths = vec![
-            PathBuf::from("/usr/local/share"),
-            PathBuf::from("/usr/share"),
-        ];
-
-        #[cfg(target_os = "openbsd")]
-        let default_paths = vec![
-            PathBuf::from("/usr/local/share"),
-            PathBuf::from("/usr/share"),
-            PathBuf::from("/usr/X11R6/share"),
-        ];
-
-        for default_path in default_paths {
-            push_applications_dir(&mut dirs, default_path);
-        }
+    for data_dir in system_data_dirs(xdg_data_dirs) {
+        push_applications_dir(&mut dirs, data_dir);
     }
 
     dirs
+}
+
+pub(crate) fn system_data_dirs(value: Option<&str>) -> Vec<PathBuf> {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        return value
+            .split(':')
+            .filter(|entry| !entry.is_empty())
+            .map(PathBuf::from)
+            .collect();
+    }
+
+    let paths = vec![
+        PathBuf::from("/usr/local/share"),
+        PathBuf::from("/usr/share"),
+    ];
+    #[cfg(target_os = "openbsd")]
+    let paths = {
+        let mut paths = paths;
+        paths.push(PathBuf::from("/usr/X11R6/share"));
+        paths
+    };
+    paths
 }
 
 fn push_applications_dir(dirs: &mut Vec<PathBuf>, base_dir: impl AsRef<Path>) {
@@ -65,7 +68,7 @@ fn push_applications_dir(dirs: &mut Vec<PathBuf>, base_dir: impl AsRef<Path>) {
 
 #[cfg(test)]
 mod tests {
-    use super::application_dirs_from_sources;
+    use super::{application_dirs_from_sources, system_data_dirs};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -99,7 +102,8 @@ mod tests {
 
         let dirs = application_dirs_from_sources(Some(&xdg_home), Some(&home_dir), Some(""));
 
-        assert_eq!(dirs, vec![expected]);
+        assert_eq!(dirs.first(), Some(&expected));
+        assert!(!dirs.contains(&home_dir.join(".local/share/applications")));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -122,5 +126,15 @@ mod tests {
             vec![home_expected, system_one_expected, system_two_expected]
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn empty_system_data_dirs_uses_platform_defaults() {
+        let dirs = system_data_dirs(Some(""));
+
+        assert!(dirs.contains(&PathBuf::from("/usr/local/share")));
+        assert!(dirs.contains(&PathBuf::from("/usr/share")));
+        #[cfg(target_os = "openbsd")]
+        assert!(dirs.contains(&PathBuf::from("/usr/X11R6/share")));
     }
 }

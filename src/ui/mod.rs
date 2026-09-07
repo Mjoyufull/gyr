@@ -7,8 +7,8 @@ mod panel_layout;
 pub(crate) mod terminal;
 mod types;
 
-pub use app_ui::UI;
-pub(crate) use app_ui::effective_title_height;
+pub use app_ui::{AppIconPreview, UI};
+pub(crate) use app_ui::{effective_title_height, launcher_preview_icon_area};
 pub use dmenu_ui::{DmenuUI, TagMode};
 pub use graphics::{DISPLAY_STATE, DisplayState, GraphicsAdapter, ImageManager};
 #[allow(unused_imports)]

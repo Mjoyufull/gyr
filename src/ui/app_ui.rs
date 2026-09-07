@@ -1,5 +1,6 @@
+use eyre::Result;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, Paragraph};
@@ -12,8 +13,95 @@ pub(crate) fn effective_title_height(total_height: u16, title_panel_height_perce
     }
 }
 
+pub(crate) fn launcher_panel_areas(size: Rect, cli: &crate::cli::Opts) -> (Rect, Rect, Rect) {
+    let title_height = effective_title_height(size.height, cli.title_panel_height_percent);
+    let chunks = match cli.title_panel_position {
+        Some(crate::ui::PanelPosition::Bottom) => Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(cli.input_panel_height),
+                Constraint::Length(title_height),
+            ])
+            .split(size),
+        Some(crate::ui::PanelPosition::Middle) => Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(title_height),
+                Constraint::Length(cli.input_panel_height),
+                Constraint::Min(0),
+            ])
+            .split(size),
+        _ => Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(title_height),
+                Constraint::Min(0),
+                Constraint::Length(cli.input_panel_height),
+            ])
+            .split(size),
+    };
+
+    match cli.title_panel_position {
+        Some(crate::ui::PanelPosition::Bottom) => (chunks[2], chunks[1], chunks[0]),
+        Some(crate::ui::PanelPosition::Middle) => (chunks[1], chunks[2], chunks[0]),
+        _ => (chunks[0], chunks[2], chunks[1]),
+    }
+}
+
+fn split_icon_preview(
+    area: Rect,
+    position: crate::ui::HorizontalPosition,
+    icon_width_percent: u16,
+) -> (Rect, Rect) {
+    let text_width_percent = 100u16.saturating_sub(icon_width_percent);
+    let constraints = match position {
+        crate::ui::HorizontalPosition::Left => [
+            Constraint::Percentage(icon_width_percent),
+            Constraint::Percentage(text_width_percent),
+        ],
+        crate::ui::HorizontalPosition::Right => [
+            Constraint::Percentage(text_width_percent),
+            Constraint::Percentage(icon_width_percent),
+        ],
+    };
+    let content = Layout::horizontal(constraints).split(area);
+    match position {
+        crate::ui::HorizontalPosition::Left => (content[0], content[1]),
+        crate::ui::HorizontalPosition::Right => (content[1], content[0]),
+    }
+}
+
+pub(crate) fn launcher_preview_icon_area(size: Rect, cli: &crate::cli::Opts) -> Rect {
+    let (title_area, _, _) = launcher_panel_areas(size, cli);
+    if effective_title_height(size.height, cli.title_panel_height_percent) == 0 {
+        return Rect::default();
+    }
+    let panel_inner = title_area.inner(Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
+    let (icon_area, _) = split_icon_preview(
+        panel_inner,
+        cli.desktop_icon_position,
+        cli.desktop_icon_preview_width_percent,
+    );
+    let icon_area = icon_area.inner(Margin {
+        horizontal: 1,
+        vertical: 0,
+    });
+    Rect::new(0, 0, icon_area.width, icon_area.height)
+}
+
 /// App filtering and sorting UI (Stateless Renderer)
 pub struct UI;
+
+/// Borrowed selected-app icon state used by the launcher renderer.
+pub struct AppIconPreview<'a> {
+    pub(crate) image_manager: &'a mut crate::ui::ImageManager,
+    pub(crate) key: &'a str,
+}
 
 impl UI {
     /// Create new stateless UI renderer
@@ -22,46 +110,19 @@ impl UI {
     }
 
     /// Render the UI using the centralized State
-    pub fn render(&self, f: &mut Frame, state: &crate::core::state::State, cli: &crate::cli::Opts) {
+    pub fn render(
+        &self,
+        f: &mut Frame,
+        state: &crate::core::state::State,
+        cli: &crate::cli::Opts,
+        icon_preview: Option<AppIconPreview<'_>>,
+    ) -> Result<bool> {
         let size = f.area();
+        let mut icon_render_failed = false;
         let title_height = effective_title_height(size.height, cli.title_panel_height_percent);
         let should_render_border = title_height > 0;
 
-        // Layout calculations
-        let chunks = match cli.title_panel_position {
-            Some(crate::ui::PanelPosition::Bottom) => Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(0),
-                    Constraint::Length(cli.input_panel_height),
-                    Constraint::Length(title_height),
-                ])
-                .split(size),
-            Some(crate::ui::PanelPosition::Middle) => Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(0),
-                    Constraint::Length(title_height),
-                    Constraint::Length(cli.input_panel_height),
-                    Constraint::Min(0),
-                ])
-                .split(size),
-            _ => Layout::default() // Top default
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(title_height),
-                    Constraint::Min(0), // Apps panel
-                    Constraint::Length(cli.input_panel_height),
-                ])
-                .split(size),
-        };
-
-        let (title_area, input_area, apps_area) = match cli.title_panel_position {
-            Some(crate::ui::PanelPosition::Bottom) => (chunks[2], chunks[1], chunks[0]),
-            Some(crate::ui::PanelPosition::Middle) => (chunks[1], chunks[2], chunks[0]),
-            // Default: Title (0), Apps (1), Input (2)
-            _ => (chunks[0], chunks[2], chunks[1]),
-        };
+        let (title_area, input_area, apps_area) = launcher_panel_areas(size, cli);
 
         // Render Title/Info Panel
         if should_render_border {
@@ -95,10 +156,45 @@ impl UI {
 
             // Text rendering from state.text which should be populated by state.update_info
             let info_text: Vec<Line> = state.text.lines().map(Line::from).collect();
-            let paragraph = Paragraph::new(info_text)
-                .block(info_block)
-                .style(Style::default().fg(cli.main_text_color));
-            f.render_widget(paragraph, title_area);
+            if let Some(icon_preview) = icon_preview {
+                let inner = info_block.inner(title_area);
+                let (icon_area, text_area) = split_icon_preview(
+                    inner,
+                    cli.desktop_icon_position,
+                    cli.desktop_icon_preview_width_percent,
+                );
+                let icon_area = icon_area.inner(Margin {
+                    horizontal: 1,
+                    vertical: 0,
+                });
+                let icon_rendered = if icon_area.width > 0 && icon_area.height > 0 {
+                    Some(icon_preview.image_manager.render_cached(
+                        f,
+                        icon_preview.key,
+                        icon_area,
+                    )?)
+                } else {
+                    None
+                };
+                if icon_rendered == Some(true) {
+                    f.render_widget(info_block, title_area);
+                    f.render_widget(
+                        Paragraph::new(info_text).style(Style::default().fg(cli.main_text_color)),
+                        text_area,
+                    );
+                } else {
+                    icon_render_failed = icon_rendered == Some(false);
+                    let paragraph = Paragraph::new(info_text)
+                        .block(info_block)
+                        .style(Style::default().fg(cli.main_text_color));
+                    f.render_widget(paragraph, title_area);
+                }
+            } else {
+                let paragraph = Paragraph::new(info_text)
+                    .block(info_block)
+                    .style(Style::default().fg(cli.main_text_color));
+                f.render_widget(paragraph, title_area);
+            }
         }
 
         // Render Input
@@ -220,12 +316,16 @@ impl UI {
         }
 
         f.render_stateful_widget(list, apps_area, &mut list_state);
+        Ok(icon_render_failed)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::effective_title_height;
+    use super::{effective_title_height, launcher_preview_icon_area, split_icon_preview};
+    use crate::cli::{DesktopIconMode, Opts};
+    use crate::ui::HorizontalPosition;
+    use ratatui::layout::Rect;
 
     #[test]
     fn effective_title_height_allows_zero() {
@@ -235,5 +335,38 @@ mod tests {
     #[test]
     fn effective_title_height_matches_percentage_rounding() {
         assert_eq!(effective_title_height(21, 10), 2);
+    }
+
+    #[test]
+    fn icon_preview_defaults_can_place_icon_on_the_right() {
+        let (icon, text) =
+            split_icon_preview(Rect::new(0, 0, 100, 10), HorizontalPosition::Right, 40);
+
+        assert_eq!(text, Rect::new(0, 0, 60, 10));
+        assert_eq!(icon, Rect::new(60, 0, 40, 10));
+    }
+
+    #[test]
+    fn icon_preview_can_swap_to_the_left() {
+        let (icon, text) =
+            split_icon_preview(Rect::new(0, 0, 100, 10), HorizontalPosition::Left, 35);
+
+        assert_eq!(icon, Rect::new(0, 0, 35, 10));
+        assert_eq!(text, Rect::new(35, 0, 65, 10));
+    }
+
+    #[test]
+    fn preview_worker_area_matches_the_rendered_icon_slot() {
+        let cli = Opts {
+            desktop_icon_mode: DesktopIconMode::Preview,
+            title_panel_height_percent: 25,
+            desktop_icon_preview_width_percent: 40,
+            ..Opts::default()
+        };
+
+        assert_eq!(
+            launcher_preview_icon_area(Rect::new(0, 0, 100, 40), &cli),
+            Rect::new(0, 0, 37, 8)
+        );
     }
 }

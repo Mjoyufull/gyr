@@ -68,6 +68,21 @@ Suppress equal desktop-file IDs and normalized visible names using XDG applicati
 .B \-\-list-executables-in-path
 Include executables from $PATH alongside desktop apps
 .TP
+.BR \-\-desktop-icons [=\fIMODE\fR]
+Configure desktop icons: preview (default) shows the selected app in the title panel; no or none disables icon loading.
+.TP
+.BR \-\-icon-position " " \fISIDE\fR
+Place the selected icon preview on the left or right side of the title panel (default: right).
+.TP
+.BR \-\-icon-preview-width " " \fIN\fR
+Set the icon preview width to 10-90 percent of the title panel (default: 40).
+.TP
+.BR \-\-icon-size " " \fIPX\fR
+Request this pixel size during icon-theme lookup (default: 128).
+.TP
+.BR \-\-icon-theme " " \fITHEME\fR
+Override automatic GTK icon-theme detection.
+.TP
 .B \-\-hide-before-typing
 Hide list until first character is typed
 .TP
@@ -212,6 +227,11 @@ ranking_mode = "frecency"
 pinned_order = "ranking"
 confirm_first_launch = false
 prefix_depth = 3
+icon_mode = "preview"
+icon_position = "right"
+icon_preview_width_percent = 40
+icon_size = 128
+# icon_theme = "Papirus-Dark"
 
 # Dmenu mode overrides (optional)
 [dmenu]
@@ -502,6 +522,9 @@ Set to \fBtrue\fR to hide desktop action entries in app launcher mode, or \fBfal
 .TP
 .B FSEL_APP_LAUNCHER_AUTO_HIDE_DUPLICATES
 Set to \fBtrue\fR to enable deterministic duplicate suppression in app launcher mode (default: false)
+.TP
+.B FSEL_APP_LAUNCHER_ICON_*
+Override icon mode, position, preview width, lookup size, or theme. See config.toml for the corresponding keys.
 .SH FILES
 .TP
 .I ~/.config/fsel/config.toml

@@ -5,11 +5,13 @@ use std::path::{Path, PathBuf};
 
 mod dirs;
 mod discover;
+mod icons;
 mod parse;
 
 pub(crate) use dirs::application_dirs;
 pub(crate) use discover::desktop_file_id;
 pub use discover::{DiscoverOptions, read_with_options};
+pub(crate) use icons::IconResolver;
 
 /// An XDG Specification app with full desktop-entry metadata.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

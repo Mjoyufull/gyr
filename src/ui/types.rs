@@ -29,3 +29,28 @@ impl FromStr for PanelPosition {
         }
     }
 }
+
+/// Horizontal placement within a panel or list row.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum HorizontalPosition {
+    /// Place content on the left.
+    Left,
+    /// Place content on the right.
+    #[default]
+    Right,
+}
+
+impl FromStr for HorizontalPosition {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_lowercase().as_str() {
+            "left" => Ok(Self::Left),
+            "right" => Ok(Self::Right),
+            _ => Err(format!(
+                "Invalid horizontal position: '{value}'. Valid options: left, right"
+            )),
+        }
+    }
+}

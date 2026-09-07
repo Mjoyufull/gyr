@@ -214,4 +214,42 @@ mod tests {
         assert!(opts.dmenu_mode);
         assert_eq!(opts.dmenu_preview.as_deref(), Some("cat {}"));
     }
+
+    #[test]
+    fn desktop_icon_options_parse_as_typed_values() {
+        let command = parse_with_config(
+            &args(&[
+                "fsel",
+                "--desktop-icons=no",
+                "--icon-position",
+                "left",
+                "--icon-preview-width",
+                "35",
+                "--icon-size",
+                "96",
+                "--icon-horizontal-align",
+                "25",
+                "--icon-vertical-align",
+                "75",
+                "--icon-theme",
+                "Papirus",
+            ]),
+            FselConfig::default(),
+        )
+        .unwrap();
+
+        let CliCommand::Run(opts) = command else {
+            panic!("expected run command");
+        };
+        assert_eq!(opts.desktop_icon_mode, crate::cli::DesktopIconMode::None);
+        assert_eq!(
+            opts.desktop_icon_position,
+            crate::ui::HorizontalPosition::Left
+        );
+        assert_eq!(opts.desktop_icon_preview_width_percent, 35);
+        assert_eq!(opts.desktop_icon_size, 96);
+        assert_eq!(opts.desktop_icon_horizontal_align_percent, 25);
+        assert_eq!(opts.desktop_icon_vertical_align_percent, 75);
+        assert_eq!(opts.desktop_icon_theme.as_deref(), Some("Papirus"));
+    }
 }

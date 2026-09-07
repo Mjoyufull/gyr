@@ -74,6 +74,25 @@ fn apply_app_launcher_overrides(default: &mut Opts, fsel_config: &FselConfig) {
     if let Some(pinned_order_mode) = fsel_config.app_launcher.pinned_order {
         default.pinned_order_mode = pinned_order_mode;
     }
+    if let Some(icon_mode) = fsel_config.app_launcher.icon_mode {
+        default.desktop_icon_mode = icon_mode;
+    }
+    if let Some(icon_position) = fsel_config.app_launcher.icon_position {
+        default.desktop_icon_position = icon_position;
+    }
+    if let Some(width) = fsel_config.app_launcher.icon_preview_width_percent {
+        default.desktop_icon_preview_width_percent = width;
+    }
+    if let Some(size) = fsel_config.app_launcher.icon_size {
+        default.desktop_icon_size = size;
+    }
+    if let Some(align) = fsel_config.app_launcher.icon_horizontal_align_percent {
+        default.desktop_icon_horizontal_align_percent = align;
+    }
+    if let Some(align) = fsel_config.app_launcher.icon_vertical_align_percent {
+        default.desktop_icon_vertical_align_percent = align;
+    }
+    default.desktop_icon_theme = fsel_config.app_launcher.icon_theme.clone();
 }
 
 fn apply_ui_config(default: &mut Opts, fsel_config: &FselConfig) {

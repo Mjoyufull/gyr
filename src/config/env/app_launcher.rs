@@ -1,6 +1,7 @@
 use super::helpers::{
-    BOOLEAN_EXPECTED, INTEGER_EXPECTED, MATCH_MODE_EXPECTED, OverrideSource, PINNED_ORDER_EXPECTED,
-    RANKING_MODE_EXPECTED, set_optional_launch_prefix, set_optional_parsed,
+    BOOLEAN_EXPECTED, DESKTOP_ICON_MODE_EXPECTED, HORIZONTAL_POSITION_EXPECTED, INTEGER_EXPECTED,
+    MATCH_MODE_EXPECTED, OverrideSource, PINNED_ORDER_EXPECTED, RANKING_MODE_EXPECTED,
+    set_optional_launch_prefix, set_optional_parsed, set_optional_string,
 };
 use crate::config::{ConfigError, FselConfig};
 
@@ -70,5 +71,46 @@ pub(super) fn apply(cfg: &mut FselConfig, source: &impl OverrideSource) -> Resul
         &mut cfg.app_launcher.prefix_depth,
         INTEGER_EXPECTED,
     )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_MODE",
+        &mut cfg.app_launcher.icon_mode,
+        DESKTOP_ICON_MODE_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_POSITION",
+        &mut cfg.app_launcher.icon_position,
+        HORIZONTAL_POSITION_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_PREVIEW_WIDTH_PERCENT",
+        &mut cfg.app_launcher.icon_preview_width_percent,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_SIZE",
+        &mut cfg.app_launcher.icon_size,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_HORIZONTAL_ALIGN_PERCENT",
+        &mut cfg.app_launcher.icon_horizontal_align_percent,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_VERTICAL_ALIGN_PERCENT",
+        &mut cfg.app_launcher.icon_vertical_align_percent,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_string(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_THEME",
+        &mut cfg.app_launcher.icon_theme,
+    );
     Ok(())
 }

@@ -278,6 +278,9 @@ pub fn read_with_options(
                             if let Ok(mut action_app) =
                                 App::parse_action(&contents, &action, options.filter_desktop)
                             {
+                                if action_app.icon.is_none() {
+                                    action_app.icon.clone_from(&app.icon);
+                                }
                                 attach_desktop_id(
                                     &mut action_app,
                                     &dirs,
@@ -448,6 +451,36 @@ mod tests {
 
         assert_eq!(apps.len(), 1);
         assert!(apps[0].hidden);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn desktop_actions_inherit_the_parent_icon_when_unspecified() {
+        let dir = test_temp_dir("action-icon");
+        let db_path = dir.join("history.redb");
+        fs::write(
+            dir.join("editor.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\nIcon=editor\nActions=New;\n\n[Desktop Action New]\nName=New\nExec=editor --new\n",
+        )
+        .expect("desktop entry should be written");
+        let db = Arc::new(redb::Database::create(&db_path).expect("database should be created"));
+        let receiver = read_with_options(
+            vec![dir.clone()],
+            &db,
+            DiscoverOptions {
+                filter_desktop: false,
+                filter_actions: false,
+                list_executables: false,
+                auto_hide_duplicates: false,
+            },
+        );
+        let apps = receiver.into_iter().collect::<Vec<_>>();
+        let action = apps
+            .iter()
+            .find(|app| app.name == "Editor (New)")
+            .expect("desktop action should be discovered");
+
+        assert_eq!(action.icon.as_deref(), Some("editor"));
         let _ = fs::remove_dir_all(dir);
     }
 }

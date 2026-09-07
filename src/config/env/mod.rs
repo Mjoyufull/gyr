@@ -28,9 +28,9 @@ fn apply_overrides(
 #[cfg(test)]
 mod tests {
     use super::{apply_overrides, helpers};
-    use crate::cli::MatchMode;
+    use crate::cli::{DesktopIconMode, MatchMode};
     use crate::config::{ConfigError, FselConfig};
-    use crate::ui::PanelPosition;
+    use crate::ui::{HorizontalPosition, PanelPosition};
     use std::collections::HashMap;
 
     struct MapSource {
@@ -75,6 +75,10 @@ prefix_depth = 2
             ("FSEL_MATCH_MODE", "exact"),
             ("FSEL_DMENU_TITLE_PANEL_POSITION", "bottom"),
             ("FSEL_APP_LAUNCHER_PREFIX_DEPTH", "8"),
+            ("FSEL_APP_LAUNCHER_ICON_MODE", "preview"),
+            ("FSEL_APP_LAUNCHER_ICON_POSITION", "left"),
+            ("FSEL_APP_LAUNCHER_ICON_HORIZONTAL_ALIGN_PERCENT", "25"),
+            ("FSEL_APP_LAUNCHER_ICON_VERTICAL_ALIGN_PERCENT", "75"),
         ]);
 
         apply_overrides(&mut config, &source).unwrap();
@@ -85,6 +89,16 @@ prefix_depth = 2
             Some(PanelPosition::Bottom)
         );
         assert_eq!(config.app_launcher.prefix_depth, Some(8));
+        assert_eq!(
+            config.app_launcher.icon_mode,
+            Some(DesktopIconMode::Preview)
+        );
+        assert_eq!(
+            config.app_launcher.icon_position,
+            Some(HorizontalPosition::Left)
+        );
+        assert_eq!(config.app_launcher.icon_horizontal_align_percent, Some(25));
+        assert_eq!(config.app_launcher.icon_vertical_align_percent, Some(75));
     }
 
     #[test]

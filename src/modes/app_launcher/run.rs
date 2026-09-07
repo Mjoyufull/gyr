@@ -131,26 +131,66 @@ pub async fn run(cli: Opts) -> Result<()> {
     terminal.hide_cursor().wrap_err("Failed to hide cursor")?;
     terminal.clear().wrap_err("Failed to clear terminal")?;
 
+    // The graphics capability probe must run before the input reader, but it can
+    // wait for an unanswered terminal response. Show a usable launcher first.
+    let mut initial_render_result = Ok(false);
+    terminal.draw(|frame| {
+        initial_render_result = UI::new().render(frame, &state, &cli, None);
+    })?;
+    initial_render_result?;
+
+    let mut icons = super::icons::IconRuntime::new(&cli);
+    icons.request_if_changed(&state, terminal.size()?.into(), &cli);
+
     let mut input = InputConfig {
         disable_mouse: cli.disable_mouse,
-        tick_rate: Duration::from_millis(16),
+        tick_rate: Duration::from_millis(250),
+        render_rate: None,
         exit_key: KeyCode::Null,
         ..InputConfig::default()
     }
     .init_async();
+    let mut needs_redraw = true;
 
     loop {
-        terminal.draw(|frame| {
-            UI::new().render(frame, &state, &cli);
-        })?;
+        if needs_redraw {
+            let mut render_result = Ok(false);
+            terminal.draw(|frame| {
+                render_result = UI::new().render(frame, &state, &cli, icons.preview());
+            })?;
+            if render_result? {
+                icons.clear_failed_preview();
+                needs_redraw = true;
+                continue;
+            }
+        }
 
-        let Some(event) = input.next().await else {
-            break;
-        };
-
-        if matches!(event, Event::Input(_) | Event::Mouse(_)) {
-            let total_height = terminal.size()?.height;
-            super::events::handle_event(&mut state, event, &cli, &db, &hidden_store, total_height);
+        tokio::select! {
+            Some(result) = icons.next_result() => {
+                icons.apply_result(result);
+                needs_redraw = true;
+            }
+            maybe_event = input.next() => {
+                let Some(event) = maybe_event else {
+                    break;
+                };
+                let should_handle = matches!(&event, Event::Input(_) | Event::Mouse(_));
+                needs_redraw =
+                    matches!(&event, Event::Input(_) | Event::Mouse(_) | Event::Render);
+                let terminal_area = terminal.size()?;
+                let total_height = terminal_area.height;
+                if should_handle {
+                    super::events::handle_event(
+                        &mut state,
+                        event,
+                        &cli,
+                        &db,
+                        &hidden_store,
+                        total_height,
+                    );
+                }
+                icons.request_if_changed(&state, terminal_area.into(), &cli);
+            }
         }
 
         if state.should_exit {

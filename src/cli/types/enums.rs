@@ -89,3 +89,31 @@ impl FromStr for PinnedOrderMode {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopIconMode {
+    None,
+    #[default]
+    Preview,
+}
+
+impl DesktopIconMode {
+    pub fn shows_preview(self) -> bool {
+        matches!(self, Self::Preview)
+    }
+}
+
+impl FromStr for DesktopIconMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_lowercase().as_str() {
+            "none" | "no" | "off" | "false" => Ok(Self::None),
+            "preview" | "yes" | "on" | "true" => Ok(Self::Preview),
+            _ => Err(format!(
+                "Invalid desktop icon mode: '{value}'. Valid options: none, preview"
+            )),
+        }
+    }
+}

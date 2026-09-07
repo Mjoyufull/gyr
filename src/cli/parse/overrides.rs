@@ -2,7 +2,7 @@ use super::helpers::{parse_column_list, value_as_string};
 use crate::cli::error::CliError;
 use crate::cli::help::unknown_argument_help;
 use crate::cli::launch::{parse_launch_prefix, set_launch_prefix, set_systemd_run, set_uwsm};
-use crate::cli::{CliCommand, MatchMode, Opts};
+use crate::cli::{CliCommand, DesktopIconMode, MatchMode, Opts};
 use lexopt::prelude::*;
 
 pub(super) enum OverridesResult {
@@ -180,6 +180,62 @@ pub(super) fn parse_cli_overrides(
             }
             Long("list-executables-in-path") => {
                 default.list_executables_in_path = true;
+            }
+            Long("desktop-icons") => {
+                default.desktop_icon_mode = match parser.optional_value() {
+                    Some(value) => value
+                        .into_string()
+                        .map_err(|_| CliError::message("Desktop icon mode must be valid UTF-8"))?
+                        .parse::<DesktopIconMode>()
+                        .map_err(CliError::message)?,
+                    None => DesktopIconMode::Preview,
+                };
+            }
+            Long("icon-position") => {
+                default.desktop_icon_position =
+                    value_as_string(parser, "Desktop icon position must be valid UTF-8")?
+                        .parse()
+                        .map_err(CliError::message)?;
+            }
+            Long("icon-preview-width") => {
+                default.desktop_icon_preview_width_percent =
+                    value_as_string(parser, "Desktop icon preview width must be valid UTF-8")?
+                        .parse::<u16>()
+                        .map_err(|_| {
+                            CliError::message("Desktop icon preview width must be an integer")
+                        })?;
+            }
+            Long("icon-size") => {
+                default.desktop_icon_size =
+                    value_as_string(parser, "Desktop icon size must be valid UTF-8")?
+                        .parse::<u16>()
+                        .map_err(|_| CliError::message("Desktop icon size must be an integer"))?;
+            }
+            Long("icon-horizontal-align") => {
+                default.desktop_icon_horizontal_align_percent = value_as_string(
+                    parser,
+                    "Desktop icon horizontal alignment must be valid UTF-8",
+                )?
+                .parse::<u16>()
+                .map_err(|_| {
+                    CliError::message("Desktop icon horizontal alignment must be an integer")
+                })?;
+            }
+            Long("icon-vertical-align") => {
+                default.desktop_icon_vertical_align_percent = value_as_string(
+                    parser,
+                    "Desktop icon vertical alignment must be valid UTF-8",
+                )?
+                .parse::<u16>()
+                .map_err(|_| {
+                    CliError::message("Desktop icon vertical alignment must be an integer")
+                })?;
+            }
+            Long("icon-theme") => {
+                default.desktop_icon_theme = Some(value_as_string(
+                    parser,
+                    "Desktop icon theme must be valid UTF-8",
+                )?);
             }
             Long("match-mode") => {
                 let mode = value_as_string(parser, "Match mode must be valid UTF-8")?;

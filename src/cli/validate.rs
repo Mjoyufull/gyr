@@ -1,6 +1,6 @@
 use super::error::CliError;
 use super::launch::active_launch_method_count;
-use super::types::Opts;
+use super::types::{DesktopIconMode, Opts};
 
 pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<(), CliError> {
     let hidden_commands = usize::from(default.list_hidden)
@@ -21,6 +21,40 @@ pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<
     if hidden_commands > 0 && (default.program.is_some() || default.search_string.is_some()) {
         return Err(CliError::message(
             "Error: hidden-entry commands cannot be combined with launch or search requests\n",
+        ));
+    }
+
+    let uses_desktop_icons = !default.dmenu_mode
+        && !default.cclip_mode
+        && !default.stdout
+        && default.program.is_none()
+        && hidden_commands == 0
+        && !default.clear_history
+        && !default.clear_cache
+        && !default.refresh_cache;
+    if uses_desktop_icons
+        && default.desktop_icon_mode.shows_preview()
+        && !(10..=90).contains(&default.desktop_icon_preview_width_percent)
+    {
+        return Err(CliError::message(
+            "Error: Desktop icon preview width must be between 10 and 90\n",
+        ));
+    }
+    if uses_desktop_icons
+        && default.desktop_icon_mode != DesktopIconMode::None
+        && (default.desktop_icon_size == 0 || default.desktop_icon_size > 4096)
+    {
+        return Err(CliError::message(
+            "Error: Desktop icon size must be between 1 and 4096\n",
+        ));
+    }
+    if uses_desktop_icons
+        && default.desktop_icon_mode != DesktopIconMode::None
+        && (default.desktop_icon_horizontal_align_percent > 100
+            || default.desktop_icon_vertical_align_percent > 100)
+    {
+        return Err(CliError::message(
+            "Error: Desktop icon alignment must be between 0 and 100\n",
         ));
     }
 
@@ -119,9 +153,8 @@ Available methods: --launch-prefix, --systemd-run, --uwsm\n",
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use crate::cli::types::Opts;
+    use super::validate;
+    use crate::cli::{DesktopIconMode, Opts};
 
     #[test]
     fn reject_both_index_modes() {
@@ -138,5 +171,64 @@ mod tests {
                 .to_string()
                 .contains("Cannot use --index and --index-original")
         );
+    }
+
+    #[test]
+    fn disabled_icon_layout_ignores_unused_dimensions() {
+        let mut options = Opts {
+            desktop_icon_mode: DesktopIconMode::None,
+            desktop_icon_preview_width_percent: 0,
+            desktop_icon_size: 0,
+            ..Opts::default()
+        };
+
+        assert!(validate(&mut options, 0).is_ok());
+    }
+
+    #[test]
+    fn active_icon_layout_rejects_alignment_over_one_hundred() {
+        let mut options = Opts {
+            desktop_icon_horizontal_align_percent: 101,
+            ..Opts::default()
+        };
+
+        let error = validate(&mut options, 0).expect_err("alignment should be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("alignment must be between 0 and 100")
+        );
+    }
+
+    #[test]
+    fn non_launcher_modes_ignore_launcher_icon_dimensions() {
+        for mut options in [
+            Opts {
+                dmenu_mode: true,
+                desktop_icon_preview_width_percent: 0,
+                desktop_icon_size: 0,
+                ..Opts::default()
+            },
+            Opts {
+                cclip_mode: true,
+                desktop_icon_preview_width_percent: 0,
+                desktop_icon_size: 0,
+                ..Opts::default()
+            },
+            Opts {
+                program: Some("true".to_string()),
+                desktop_icon_preview_width_percent: 0,
+                desktop_icon_size: 0,
+                ..Opts::default()
+            },
+            Opts {
+                stdout: true,
+                desktop_icon_preview_width_percent: 0,
+                desktop_icon_size: 0,
+                ..Opts::default()
+            },
+        ] {
+            assert!(validate(&mut options, 0).is_ok());
+        }
     }
 }

@@ -125,6 +125,16 @@ confirm_first_launch = false
 #          but typing "fire" (4 chars) uses fuzzy matching for all results.
 prefix_depth = 3
 
+# Desktop icon rendering. "preview" shows the selected app in the title panel;
+# "none" disables icon loading. The default position is the right side.
+icon_mode = "preview"
+icon_position = "right"            # "left" or "right"
+icon_preview_width_percent = 40     # 10-90 percent of title panel width
+icon_size = 128                     # Preferred size for themed icon lookup
+icon_horizontal_align_percent = 50  # 0=left, 50=center, 100=right within the icon area
+icon_vertical_align_percent = 50    # 0=top, 50=center, 100=bottom within the icon area
+# icon_theme = "Papirus-Dark"       # Override desktop theme auto-detection
+
 # ===== DMENU MODE =====
 # Override settings when using --dmenu flag
 # Inherits from main settings if not specified

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Deserializer};
 use std::str::FromStr;
 
-use crate::cli::{MatchMode, PinnedOrderMode, RankingMode};
-use crate::ui::PanelPosition;
+use crate::cli::{DesktopIconMode, MatchMode, PinnedOrderMode, RankingMode};
+use crate::ui::{HorizontalPosition, PanelPosition};
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FselConfig {
@@ -37,6 +37,15 @@ pub struct AppLauncherConfig {
     pub pinned_order: Option<PinnedOrderMode>,
     pub confirm_first_launch: Option<bool>,
     pub prefix_depth: Option<usize>,
+    #[serde(default, deserialize_with = "deserialize_optional_parsed")]
+    pub icon_mode: Option<DesktopIconMode>,
+    #[serde(default, deserialize_with = "deserialize_optional_parsed")]
+    pub icon_position: Option<HorizontalPosition>,
+    pub icon_preview_width_percent: Option<u16>,
+    pub icon_size: Option<u16>,
+    pub icon_horizontal_align_percent: Option<u16>,
+    pub icon_vertical_align_percent: Option<u16>,
+    pub icon_theme: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

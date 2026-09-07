@@ -37,6 +37,11 @@ Usage:
 │  ├─ --hide-before-typing         Keep the list hidden until you type the first character
 │  ├─ --stdout                     Print filtered desktop entries to stdout in json form
 │  ├─ --list-executables-in-path   Include executables from $PATH in launcher mode
+│  ├─ --desktop-icons[=MODE]       Use preview (default) or disable with no/none
+│  ├─ --icon-position <SIDE>       Place the icon preview on the left or right
+│  ├─ --icon-horizontal-align <N>  Align icon content from left (0) to right (100)
+│  ├─ --icon-vertical-align <N>    Align icon content from top (0) to bottom (100)
+│  ├─ --icon-theme <THEME>         Override automatic desktop icon-theme detection
 │  ├─ --match-mode <MODE>          Choose fuzzy or exact matching
 │  └─ --prefix-depth <N>           Tune how long prefix matches outrank fuzzy matches
 │
@@ -93,6 +98,13 @@ Usage:
 │  ├─ --auto-hide-duplicates[=no]  Suppress duplicate IDs/names using XDG source precedence
 │  ├─ --hide-before-typing         Keep the list hidden until you type the first character
 │  ├─ --list-executables-in-path   Include executables from $PATH in launcher mode
+│  ├─ --desktop-icons[=MODE]       Use preview (default) or none
+│  ├─ --icon-position <SIDE>       Put the title-panel icon on the left or right
+│  ├─ --icon-preview-width <N>     Give the icon 10-90 percent of the title panel
+│  ├─ --icon-size <PX>             Request a themed icon size from 1-4096 pixels
+│  ├─ --icon-horizontal-align <N>  Align icon content from left (0) to right (100)
+│  ├─ --icon-vertical-align <N>    Align icon content from top (0) to bottom (100)
+│  ├─ --icon-theme <THEME>         Override automatic desktop icon-theme detection
 │  ├─ --match-mode <MODE>          Choose fuzzy or exact matching (default: fuzzy)
 │  └─ --prefix-depth <N>           Set how long prefix matches outrank fuzzy matches (default: 3)
 │

@@ -47,6 +47,30 @@ fn parse_semicolon_list(value: &str) -> Vec<String> {
         .collect()
 }
 
+fn unescape_icon_string(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut characters = value.chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            output.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some('s') => output.push(' '),
+            Some('n') => output.push('\n'),
+            Some('t') => output.push('\t'),
+            Some('r') => output.push('\r'),
+            Some('\\') => output.push('\\'),
+            Some(other) => {
+                output.push('\\');
+                output.push(other);
+            }
+            None => output.push('\\'),
+        }
+    }
+    output
+}
+
 #[derive(Default)]
 struct LocalizedField {
     base: Option<String>,
@@ -160,7 +184,7 @@ impl App {
                     "MimeType" if mime_types.is_empty() => {
                         mime_types = parse_semicolon_list(value);
                     }
-                    "Icon" if icon.is_none() => icon = Some(value.to_string()),
+                    "Icon" if icon.is_none() => icon = Some(unescape_icon_string(value)),
                     "Terminal" => terminal_exec = value.eq_ignore_ascii_case("true"),
                     "Exec" if exec.is_none() => {
                         let cleaned = value
@@ -286,6 +310,17 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn parse_unescapes_icon_strings() {
+        let app = App::parse(
+            "[Desktop Entry]\nType=Application\nName=Editor\nExec=/usr/bin/editor\nIcon=/opt/My\\sApp/icon.png",
+            false,
+        )
+        .expect("desktop entry should parse");
+
+        assert_eq!(app.icon.as_deref(), Some("/opt/My App/icon.png"));
     }
 
     #[test]
