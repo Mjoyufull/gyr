@@ -133,7 +133,7 @@ pub async fn run(cli: Opts) -> Result<()> {
 
     // The graphics capability probe must run before the input reader, but it can
     // wait for an unanswered terminal response. Show a usable launcher first.
-    let mut initial_render_result = Ok(false);
+    let mut initial_render_result = Ok((false, false));
     terminal.draw(|frame| {
         initial_render_result = UI::new().render(frame, &state, &cli, None);
     })?;
@@ -154,12 +154,13 @@ pub async fn run(cli: Opts) -> Result<()> {
 
     loop {
         if needs_redraw {
-            let mut render_result = Ok(false);
+            let mut render_result = Ok((false, false));
             terminal.draw(|frame| {
-                render_result = UI::new().render(frame, &state, &cli, icons.preview());
+                render_result = UI::new().render(frame, &state, &cli, icons.render_state());
             })?;
-            if render_result? {
-                icons.clear_failed_preview();
+            let (preview_failed, list_failed) = render_result?;
+            if preview_failed || list_failed {
+                icons.handle_render_failure(preview_failed);
                 needs_redraw = true;
                 continue;
             }

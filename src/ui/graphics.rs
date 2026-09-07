@@ -82,6 +82,11 @@ impl ImageManager {
         self.cache.contains_key(rowid)
     }
 
+    /// Grow the cache when a caller needs a larger working set.
+    pub(crate) fn ensure_cache_capacity(&mut self, minimum: usize) {
+        self.cache_capacity = self.cache_capacity.max(minimum);
+    }
+
     /// Decode image bytes and cache the terminal protocol under `key`.
     pub async fn load_image_bytes(&mut self, key: &str, bytes: Vec<u8>) -> Result<()> {
         if self.cache.contains_key(key) {
@@ -278,11 +283,14 @@ impl ImageManager {
 
     /// Render a cached image without changing the manager's current selection.
     pub fn render_cached(&mut self, f: &mut Frame, key: &str, area: Rect) -> Result<bool> {
+        if !self.cache.contains_key(key) {
+            return Ok(false);
+        }
+        self.update_lru(key);
         let encoding_failed = {
             let Some(protocol) = self.cache.get_mut(key) else {
                 return Ok(false);
             };
-
             match protocol {
                 CachedProtocol::Fixed(protocol) => {
                     f.render_widget(Image::new(protocol), area);

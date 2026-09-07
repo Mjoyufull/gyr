@@ -37,8 +37,9 @@ Usage:
 │  ├─ --hide-before-typing         Keep the list hidden until you type the first character
 │  ├─ --stdout                     Print filtered desktop entries to stdout in json form
 │  ├─ --list-executables-in-path   Include executables from $PATH in launcher mode
-│  ├─ --desktop-icons[=MODE]       Use preview (default) or disable with no/none
-│  ├─ --icon-position <SIDE>       Place the icon preview on the left or right
+│  ├─ --desktop-icons[=MODE]       Use preview, list, both, or none (default: preview)
+│  ├─ --icon-position <SIDE>       Place title and list icons on the left or right
+│  ├─ --icon-arrow-before          Put the selection arrow before a left list icon
 │  ├─ --icon-horizontal-align <N>  Align icon content from left (0) to right (100)
 │  ├─ --icon-vertical-align <N>    Align icon content from top (0) to bottom (100)
 │  ├─ --icon-theme <THEME>         Override automatic desktop icon-theme detection
@@ -98,9 +99,12 @@ Usage:
 │  ├─ --auto-hide-duplicates[=no]  Suppress duplicate IDs/names using XDG source precedence
 │  ├─ --hide-before-typing         Keep the list hidden until you type the first character
 │  ├─ --list-executables-in-path   Include executables from $PATH in launcher mode
-│  ├─ --desktop-icons[=MODE]       Use preview (default) or none
-│  ├─ --icon-position <SIDE>       Put the title-panel icon on the left or right
+│  ├─ --desktop-icons[=MODE]       Use preview, list, both, or none (default: preview)
+│  ├─ --icon-position <SIDE>       Put title and list icons on the left or right
 │  ├─ --icon-preview-width <N>     Give the icon 10-90 percent of the title panel
+│  ├─ --icon-list-width <N>        Reserve 1-16 terminal columns for each list icon
+│  ├─ --icon-list-height <N>       Give each icon/list row 1-8 terminal rows
+│  ├─ --icon-arrow-before          Put the selection arrow before a left list icon
 │  ├─ --icon-size <PX>             Request a themed icon size from 1-4096 pixels
 │  ├─ --icon-horizontal-align <N>  Align icon content from left (0) to right (100)
 │  ├─ --icon-vertical-align <N>    Align icon content from top (0) to bottom (100)

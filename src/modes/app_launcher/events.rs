@@ -28,7 +28,7 @@ fn handle_key_event(
     hidden_store: &HiddenEntryStore,
     total_height: u16,
 ) {
-    let max_visible = max_visible_items(total_height, cli);
+    let max_visible = crate::ui::launcher_visible_rows(total_height, cli);
     state.clear_status_message();
 
     let msg = if cli.keybinds.matches_exit(key.code, key.modifiers) {
@@ -245,46 +245,38 @@ fn refresh_info(state: &mut State, cli: &Opts) {
     );
 }
 
-fn max_visible_items(total_height: u16, cli: &Opts) -> usize {
-    let title_height =
-        crate::ui::effective_title_height(total_height, cli.title_panel_height_percent);
-    let input_height = cli.input_panel_height;
-    let apps_panel_height = total_height.saturating_sub(title_height + input_height);
-    apps_panel_height.saturating_sub(2) as usize
-}
-
 fn list_metrics(total_height: u16, cli: &Opts) -> ListMetrics {
     let title_height =
         crate::ui::effective_title_height(total_height, cli.title_panel_height_percent);
-    let input_height = cli.input_panel_height;
     let title_panel_position = cli
         .title_panel_position
         .unwrap_or(crate::ui::PanelPosition::Top);
 
-    let (apps_panel_start, apps_panel_height) = match title_panel_position {
-        crate::ui::PanelPosition::Top => (
-            title_height,
-            total_height.saturating_sub(title_height + input_height),
-        ),
-        crate::ui::PanelPosition::Middle | crate::ui::PanelPosition::Bottom => {
-            (0, total_height.saturating_sub(title_height + input_height))
-        }
+    let apps_panel_start = match title_panel_position {
+        crate::ui::PanelPosition::Top => title_height,
+        crate::ui::PanelPosition::Middle | crate::ui::PanelPosition::Bottom => 0,
     };
 
     ListMetrics {
-        list_content_start: apps_panel_start + 1,
-        max_visible: apps_panel_height.saturating_sub(2) as usize,
+        list_content_start: apps_panel_start.saturating_add(1),
+        max_visible: crate::ui::launcher_visible_rows(total_height, cli),
+        row_height: crate::ui::app_row_height(cli),
     }
 }
 
 struct ListMetrics {
     list_content_start: u16,
     max_visible: usize,
+    row_height: u16,
 }
 
 impl ListMetrics {
     fn contains_row(&self, row: u16) -> bool {
-        row >= self.list_content_start && row < self.list_content_start + self.max_visible as u16
+        row >= self.list_content_start
+            && row
+                < self
+                    .list_content_start
+                    .saturating_add((self.max_visible as u16).saturating_mul(self.row_height))
     }
 
     fn app_index_for_row(&self, row: u16, state: &State) -> Option<usize> {
@@ -292,13 +284,13 @@ impl ListMetrics {
             return None;
         }
 
-        let row_in_content = row - self.list_content_start;
+        let row_in_content = (row - self.list_content_start) / self.row_height;
         let index = state.scroll_offset + row_in_content as usize;
         (index < state.shown.len()).then_some(index)
     }
 
     fn snap_selection_to_mouse(&self, state: &mut State, row: u16) {
-        let row_in_content = row.saturating_sub(self.list_content_start);
+        let row_in_content = row.saturating_sub(self.list_content_start) / self.row_height;
         let index = state.scroll_offset + row_in_content as usize;
         if index < state.shown.len() {
             state.selected = Some(index);

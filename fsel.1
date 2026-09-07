@@ -69,16 +69,31 @@ Suppress equal desktop-file IDs and normalized visible names using XDG applicati
 Include executables from $PATH alongside desktop apps
 .TP
 .BR \-\-desktop-icons [=\fIMODE\fR]
-Configure desktop icons: preview (default) shows the selected app in the title panel; no or none disables icon loading.
+Configure desktop icons: preview (default), list, both, or none.
 .TP
 .BR \-\-icon-position " " \fISIDE\fR
-Place the selected icon preview on the left or right side of the title panel (default: right).
+Place title and list icons on the left or right (default: right).
 .TP
 .BR \-\-icon-preview-width " " \fIN\fR
 Set the icon preview width to 10-90 percent of the title panel (default: 40).
 .TP
+.BR \-\-icon-list-width " " \fIN\fR
+Reserve 1-16 terminal columns for icons beside results (default: 4).
+.TP
+.BR \-\-icon-list-height " " \fIN\fR
+Give each app 1-8 terminal rows when list icons are enabled (default: 2).
+.TP
+.B \-\-icon-arrow-before
+Place the selection arrow before a left-side list icon.
+.TP
 .BR \-\-icon-size " " \fIPX\fR
 Request this pixel size during icon-theme lookup (default: 128).
+.TP
+.BR \-\-icon-horizontal-align " " \fIN\fR
+Align icon content horizontally: 0 is left and 100 is right (default: 50).
+.TP
+.BR \-\-icon-vertical-align " " \fIN\fR
+Align icon content vertically: 0 is top and 100 is bottom (default: 50).
 .TP
 .BR \-\-icon-theme " " \fITHEME\fR
 Override automatic GTK icon-theme detection.
@@ -230,7 +245,12 @@ prefix_depth = 3
 icon_mode = "preview"
 icon_position = "right"
 icon_preview_width_percent = 40
+icon_list_width = 4
+icon_list_height = 2
+icon_arrow_before = false
 icon_size = 128
+icon_horizontal_align_percent = 50
+icon_vertical_align_percent = 50
 # icon_theme = "Papirus-Dark"
 
 # Dmenu mode overrides (optional)

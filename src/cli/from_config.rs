@@ -83,6 +83,15 @@ fn apply_app_launcher_overrides(default: &mut Opts, fsel_config: &FselConfig) {
     if let Some(width) = fsel_config.app_launcher.icon_preview_width_percent {
         default.desktop_icon_preview_width_percent = width;
     }
+    if let Some(width) = fsel_config.app_launcher.icon_list_width {
+        default.desktop_icon_list_width = width;
+    }
+    if let Some(height) = fsel_config.app_launcher.icon_list_height {
+        default.desktop_icon_list_height = height;
+    }
+    if let Some(arrow_before) = fsel_config.app_launcher.icon_arrow_before {
+        default.desktop_icon_arrow_before = arrow_before;
+    }
     if let Some(size) = fsel_config.app_launcher.icon_size {
         default.desktop_icon_size = size;
     }

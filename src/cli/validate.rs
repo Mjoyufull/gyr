@@ -57,6 +57,22 @@ pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<
             "Error: Desktop icon alignment must be between 0 and 100\n",
         ));
     }
+    if uses_desktop_icons
+        && default.desktop_icon_mode.shows_list()
+        && !(1..=16).contains(&default.desktop_icon_list_width)
+    {
+        return Err(CliError::message(
+            "Error: Desktop icon list width must be between 1 and 16\n",
+        ));
+    }
+    if uses_desktop_icons
+        && default.desktop_icon_mode.shows_list()
+        && !(1..=8).contains(&default.desktop_icon_list_height)
+    {
+        return Err(CliError::message(
+            "Error: Desktop icon list height must be between 1 and 8\n",
+        ));
+    }
 
     if default.program.is_some() && default.search_string.is_some() {
         return Err(CliError::message(
@@ -179,6 +195,20 @@ mod tests {
             desktop_icon_mode: DesktopIconMode::None,
             desktop_icon_preview_width_percent: 0,
             desktop_icon_size: 0,
+            desktop_icon_list_width: 0,
+            desktop_icon_list_height: 0,
+            ..Opts::default()
+        };
+
+        assert!(validate(&mut options, 0).is_ok());
+    }
+
+    #[test]
+    fn preview_icon_layout_ignores_unused_list_dimensions() {
+        let mut options = Opts {
+            desktop_icon_mode: DesktopIconMode::Preview,
+            desktop_icon_list_width: 0,
+            desktop_icon_list_height: 0,
             ..Opts::default()
         };
 
@@ -207,24 +237,32 @@ mod tests {
                 dmenu_mode: true,
                 desktop_icon_preview_width_percent: 0,
                 desktop_icon_size: 0,
+                desktop_icon_list_width: 0,
+                desktop_icon_list_height: 0,
                 ..Opts::default()
             },
             Opts {
                 cclip_mode: true,
                 desktop_icon_preview_width_percent: 0,
                 desktop_icon_size: 0,
+                desktop_icon_list_width: 0,
+                desktop_icon_list_height: 0,
                 ..Opts::default()
             },
             Opts {
                 program: Some("true".to_string()),
                 desktop_icon_preview_width_percent: 0,
                 desktop_icon_size: 0,
+                desktop_icon_list_width: 0,
+                desktop_icon_list_height: 0,
                 ..Opts::default()
             },
             Opts {
                 stdout: true,
                 desktop_icon_preview_width_percent: 0,
                 desktop_icon_size: 0,
+                desktop_icon_list_width: 0,
+                desktop_icon_list_height: 0,
                 ..Opts::default()
             },
         ] {

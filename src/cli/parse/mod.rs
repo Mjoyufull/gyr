@@ -225,6 +225,11 @@ mod tests {
                 "left",
                 "--icon-preview-width",
                 "35",
+                "--icon-list-width",
+                "5",
+                "--icon-list-height",
+                "3",
+                "--icon-arrow-before",
                 "--icon-size",
                 "96",
                 "--icon-horizontal-align",
@@ -247,6 +252,9 @@ mod tests {
             crate::ui::HorizontalPosition::Left
         );
         assert_eq!(opts.desktop_icon_preview_width_percent, 35);
+        assert_eq!(opts.desktop_icon_list_width, 5);
+        assert_eq!(opts.desktop_icon_list_height, 3);
+        assert!(opts.desktop_icon_arrow_before);
         assert_eq!(opts.desktop_icon_size, 96);
         assert_eq!(opts.desktop_icon_horizontal_align_percent, 25);
         assert_eq!(opts.desktop_icon_vertical_align_percent, 75);

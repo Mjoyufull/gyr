@@ -91,6 +91,24 @@ pub(super) fn apply(cfg: &mut FselConfig, source: &impl OverrideSource) -> Resul
     )?;
     set_optional_parsed(
         source,
+        "FSEL_APP_LAUNCHER_ICON_LIST_WIDTH",
+        &mut cfg.app_launcher.icon_list_width,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_LIST_HEIGHT",
+        &mut cfg.app_launcher.icon_list_height,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_ICON_ARROW_BEFORE",
+        &mut cfg.app_launcher.icon_arrow_before,
+        BOOLEAN_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
         "FSEL_APP_LAUNCHER_ICON_SIZE",
         &mut cfg.app_launcher.icon_size,
         INTEGER_EXPECTED,

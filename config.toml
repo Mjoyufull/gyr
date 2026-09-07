@@ -125,11 +125,14 @@ confirm_first_launch = false
 #          but typing "fire" (4 chars) uses fuzzy matching for all results.
 prefix_depth = 3
 
-# Desktop icon rendering. "preview" shows the selected app in the title panel;
-# "none" disables icon loading. The default position is the right side.
+# Desktop icon rendering: "preview", "list", "both", or "none".
+# The default selected preview uses the right side of the title panel.
 icon_mode = "preview"
 icon_position = "right"            # "left" or "right"
 icon_preview_width_percent = 40     # 10-90 percent of title panel width
+icon_list_width = 4                 # 1-16 terminal columns
+icon_list_height = 2                # 1-8 terminal rows per app
+icon_arrow_before = false           # Put selection arrow before left-side list icons
 icon_size = 128                     # Preferred size for themed icon lookup
 icon_horizontal_align_percent = 50  # 0=left, 50=center, 100=right within the icon area
 icon_vertical_align_percent = 50    # 0=top, 50=center, 100=bottom within the icon area

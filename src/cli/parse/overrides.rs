@@ -205,6 +205,25 @@ pub(super) fn parse_cli_overrides(
                             CliError::message("Desktop icon preview width must be an integer")
                         })?;
             }
+            Long("icon-list-width") => {
+                default.desktop_icon_list_width =
+                    value_as_string(parser, "Desktop list icon width must be valid UTF-8")?
+                        .parse::<u16>()
+                        .map_err(|_| {
+                            CliError::message("Desktop list icon width must be an integer")
+                        })?;
+            }
+            Long("icon-list-height") => {
+                default.desktop_icon_list_height =
+                    value_as_string(parser, "Desktop list icon height must be valid UTF-8")?
+                        .parse::<u16>()
+                        .map_err(|_| {
+                            CliError::message("Desktop list icon height must be an integer")
+                        })?;
+            }
+            Long("icon-arrow-before") => {
+                default.desktop_icon_arrow_before = true;
+            }
             Long("icon-size") => {
                 default.desktop_icon_size =
                     value_as_string(parser, "Desktop icon size must be valid UTF-8")?

@@ -42,6 +42,9 @@ pub struct AppLauncherConfig {
     #[serde(default, deserialize_with = "deserialize_optional_parsed")]
     pub icon_position: Option<HorizontalPosition>,
     pub icon_preview_width_percent: Option<u16>,
+    pub icon_list_width: Option<u16>,
+    pub icon_list_height: Option<u16>,
+    pub icon_arrow_before: Option<bool>,
     pub icon_size: Option<u16>,
     pub icon_horizontal_align_percent: Option<u16>,
     pub icon_vertical_align_percent: Option<u16>,

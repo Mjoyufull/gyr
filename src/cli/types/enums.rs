@@ -96,11 +96,17 @@ pub enum DesktopIconMode {
     None,
     #[default]
     Preview,
+    List,
+    Both,
 }
 
 impl DesktopIconMode {
     pub fn shows_preview(self) -> bool {
-        matches!(self, Self::Preview)
+        matches!(self, Self::Preview | Self::Both)
+    }
+
+    pub fn shows_list(self) -> bool {
+        matches!(self, Self::List | Self::Both)
     }
 }
 
@@ -111,8 +117,10 @@ impl FromStr for DesktopIconMode {
         match value.trim().to_lowercase().as_str() {
             "none" | "no" | "off" | "false" => Ok(Self::None),
             "preview" | "yes" | "on" | "true" => Ok(Self::Preview),
+            "list" => Ok(Self::List),
+            "both" => Ok(Self::Both),
             _ => Err(format!(
-                "Invalid desktop icon mode: '{value}'. Valid options: none, preview"
+                "Invalid desktop icon mode: '{value}'. Valid options: none, preview, list, both"
             )),
         }
     }
