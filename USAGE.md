@@ -728,3 +728,58 @@ This means you've placed a **color/UI option inside the [app_launcher] section**
 - Layout: `title_panel_height_percent`, `input_panel_height`, `title_panel_position`
 - Display: `show_line_numbers`, `wrap_long_lines`
 - Images: `image_preview`, `hide_inline_image_message`
+# Panel layouts
+
+The result list anchors the layout. Information and input panels can dock on any edge.
+Text stays upright when the layout rotates. Existing configurations retain their layout until
+one of the new docking settings is supplied.
+
+## Launcher and clipboard history
+
+```sh
+fsel --info-position left --info-size 35 --input-position bottom
+fsel --cclip --info-position right --info-size 45 --input-position top
+fsel --layout-rotation 90 --input-size 20 --item-width 24
+```
+
+`--info-position` and `--input-position` accept `top`, `right`, `bottom`, or `left`.
+`--info-size` is 0–90 percent of the terminal along the information panel's docking axis.
+`--input-size` is a number of columns for a side panel, or rows for a top/bottom panel.
+Zero hides that panel. An oversized input panel shrinks to leave at least one result cell.
+The information panel is allocated first, then input, and results take the remaining rectangle.
+If both panels occupy the same edge, information is outside input.
+
+`--layout-rotation` accepts 0, 90, 180, or 270 clockwise degrees. Quarter turns dock the panels
+on the rotated edges and arrange results horizontally. Half turns reverse the list order on
+screen. Arrow navigation and pointer selection follow the visible order. `--item-width`
+sets horizontal result width in columns; it does not resize text. A narrow terminal displays
+fewer complete entries. Search, selection, pins, backgrounds, and images retain their behavior.
+
+For example, under `[panels]` in the configuration:
+
+```toml
+[panels]
+info_position = "left"
+input_position = "bottom"
+info_size = 35
+input_size = 3
+rotation = 0
+item_width = 24
+```
+
+Environment names are `FSEL_PANELS_INFO_POSITION`, `FSEL_PANELS_INPUT_POSITION`,
+`FSEL_PANELS_INFO_SIZE`, `FSEL_PANELS_INPUT_SIZE`, `FSEL_PANELS_ROTATION`, and
+`FSEL_PANELS_ITEM_WIDTH`. CLI values override environment and file values.
+Legacy title position/height and input height supply defaults when the corresponding new
+setting is omitted. With no docking controls, legacy `middle` placement is preserved exactly.
+
+Negative desktop-icon alignment still intentionally permits overflow into neighboring rows
+or chrome. Moving a panel does not change that opt-in policy.
+
+## Design references
+
+- [fzf preview window options](https://github.com/junegunn/fzf/blob/master/man/man1/fzf.1)
+- [matchmaker preview layouts](https://github.com/Squirreljetpack/matchmaker#configuration)
+
+The borrowed concepts are edge placement, explicit sizing, and changing layouts interactively.
+The selector keeps its existing matching and command semantics.

@@ -122,7 +122,7 @@ impl IconRuntime {
     }
 
     pub(super) fn request_if_changed(&mut self, state: &State, terminal_area: Rect, cli: &Opts) {
-        let max_visible = crate::ui::launcher_visible_rows(terminal_area.height, cli);
+        let max_visible = crate::ui::launcher_visible_rows(terminal_area, cli);
         let previous_preview_generation = self.preview_generation;
         let preview = self.preview_request(state, terminal_area, cli);
         let preview_changed = self.preview_generation != previous_preview_generation;

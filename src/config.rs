@@ -1,3 +1,5 @@
+//! Configuration file loading, environment overrides, and validation.
+
 mod defaults;
 mod env;
 mod error;

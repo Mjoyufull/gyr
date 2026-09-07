@@ -8,6 +8,7 @@ use crate::cli::{Opts, PanelPosition};
 use crate::ui::{GraphicsAdapter, InputConfig, InputPanelStyle, Keybinds};
 
 pub(super) struct CclipOptions {
+    pub(super) panels: crate::ui::PanelSettings,
     pub(super) disable_mouse: bool,
     pub(super) hard_stop: bool,
     pub(super) wrap_long_lines: bool,
@@ -50,6 +51,7 @@ pub(super) struct CclipOptions {
 impl CclipOptions {
     pub(super) fn from_cli(cli: &Opts) -> Self {
         Self {
+            panels: cli.panels.clone(),
             disable_mouse: cli
                 .cclip_disable_mouse
                 .or(cli.dmenu_disable_mouse)
@@ -156,6 +158,20 @@ impl CclipOptions {
     }
 
     pub(super) fn split_layout(&self, area: Rect) -> crate::ui::PanelLayout {
+        if self.panels.enabled() {
+            let (info, input, items) = self.panels.split(
+                area,
+                self.content_panel_height_percent,
+                self.input_panel_height,
+                self.content_panel_position,
+            );
+            return crate::ui::PanelLayout {
+                chunks: [info, items, input],
+                content_panel_index: 0,
+                items_panel_index: 1,
+                input_panel_index: 2,
+            };
+        }
         crate::ui::split_content_panels(
             area,
             self.content_height(area.height),
@@ -164,25 +180,28 @@ impl CclipOptions {
         )
     }
 
-    pub(super) fn max_visible_items(&self, total_height: u16) -> usize {
-        self.items_content_bounds(total_height).1 as usize
+    pub(super) fn max_visible_items(&self, area: Rect) -> usize {
+        self.result_layout(area).capacity()
     }
 
-    pub(super) fn items_panel_bounds(&self, total_height: u16) -> (u16, u16) {
-        crate::ui::items_panel_bounds(
-            total_height,
-            self.content_height(total_height),
-            self.input_panel_height,
-            self.content_panel_position,
-        )
-    }
-
-    pub(super) fn items_content_bounds(&self, total_height: u16) -> (u16, u16) {
-        let (start, height) = self.items_panel_bounds(total_height);
-        let border = u16::from(self.show_items_border);
-        (
-            start.saturating_add(border),
-            height.saturating_sub(border.saturating_mul(2)),
+    pub(super) fn result_layout(&self, area: Rect) -> crate::ui::result_layout::ResultLayout {
+        let layout = self.split_layout(area);
+        let block = crate::ui::panel_block(
+            " Clipboard History ",
+            crate::ui::PanelTheme {
+                show_border: self.show_items_border,
+                show_title: self.show_panel_titles,
+                bold_title: true,
+                rounded_border: self.rounded_borders,
+                border_color: self.items_border_color,
+                background_color: self.items_background_color,
+                title_color: self.header_title_color,
+            },
+        );
+        crate::ui::result_layout::ResultLayout::new(
+            block.inner(layout.chunks[layout.items_panel_index]),
+            1,
+            &self.panels,
         )
     }
 

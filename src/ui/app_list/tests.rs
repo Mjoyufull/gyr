@@ -19,7 +19,7 @@ fn list_icons_reduce_visible_apps_by_configured_row_height() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(40, &cli), 12);
+    assert_eq!(launcher_visible_rows(Rect::new(0, 0, 80, 40), &cli), 12);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn borderless_apps_panel_uses_the_released_rows() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(40, &cli), 13);
+    assert_eq!(launcher_visible_rows(Rect::new(0, 0, 80, 40), &cli), 13);
 }
 
 #[test]
@@ -71,7 +71,10 @@ fn visible_rows_saturates_when_panel_sizes_overflow() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(u16::MAX, &cli), 0);
+    assert_eq!(
+        launcher_visible_rows(Rect::new(0, 0, 80, u16::MAX), &cli),
+        0
+    );
 }
 
 #[test]
@@ -85,7 +88,7 @@ fn middle_title_position_uses_the_actual_apps_pane_height() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(40, &cli), 6);
+    assert_eq!(launcher_visible_rows(Rect::new(0, 0, 80, 40), &cli), 6);
 }
 
 #[test]

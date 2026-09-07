@@ -8,13 +8,13 @@ mod input;
 mod input_panel;
 mod keybinds;
 mod panel_layout;
+pub(crate) mod panels;
+pub(crate) mod result_layout;
 pub(crate) mod terminal;
 mod types;
 mod visual;
 
-pub(crate) use app_list::{
-    app_row_height, launcher_list_content_area, launcher_list_icon_area, launcher_visible_rows,
-};
+pub(crate) use app_list::{launcher_list_icon_area, launcher_result_layout, launcher_visible_rows};
 pub use app_ui::{AppIcons, UI};
 pub(crate) use app_ui::{ListIconPlacement, launcher_preview_icon_area};
 pub use dmenu_ui::{DmenuUI, TagMode};
@@ -26,6 +26,7 @@ pub use keybinds::Keybinds;
 pub(crate) use panel_layout::{
     PanelLayout, effective_content_height, items_panel_bounds, split_content_panels,
 };
+pub use panels::PanelSettings;
 pub use types::*;
 pub(crate) use visual::{
     PanelTheme, panel_block, render_selection_background, selection_content_area,

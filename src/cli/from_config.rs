@@ -174,6 +174,7 @@ fn apply_ui_config(default: &mut Opts, fsel_config: &FselConfig) {
 
 fn apply_layout_config(default: &mut Opts, fsel_config: &FselConfig) {
     default.title_panel_height_percent = fsel_config.layout.title_panel_height_percent;
+    default.panels = fsel_config.panels.clone();
     default.input_panel_height = fsel_config.layout.input_panel_height;
     default.title_panel_position = Some(fsel_config.layout.title_panel_position);
 }

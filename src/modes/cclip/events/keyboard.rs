@@ -129,15 +129,23 @@ pub(super) async fn handle_key_event(
             if matches!(ctx.ui.tag_mode, TagMode::Normal) {
                 move_to_last(
                     ctx.ui,
-                    ctx.options.max_visible_items(ctx.terminal.size()?.height),
+                    ctx.options.max_visible_items(ctx.terminal.size()?.into()),
                 );
             }
         }
         KeyAction::Down => {
-            handle_down(ctx)?;
+            if ctx.options.panels.rotation >= 180 {
+                handle_up(ctx)?;
+            } else {
+                handle_down(ctx)?;
+            }
         }
         KeyAction::Up => {
-            handle_up(ctx)?;
+            if ctx.options.panels.rotation >= 180 {
+                handle_down(ctx)?;
+            } else {
+                handle_up(ctx)?;
+            }
         }
         KeyAction::Ignore => {}
     }
@@ -204,7 +212,7 @@ fn handle_down(ctx: &mut EventContext<'_, '_>) -> Result<()> {
         };
         keep_selection_visible(
             ctx.ui,
-            ctx.options.max_visible_items(ctx.terminal.size()?.height),
+            ctx.options.max_visible_items(ctx.terminal.size()?.into()),
         );
     }
 
@@ -237,7 +245,7 @@ fn handle_up(ctx: &mut EventContext<'_, '_>) -> Result<()> {
         };
         keep_selection_visible(
             ctx.ui,
-            ctx.options.max_visible_items(ctx.terminal.size()?.height),
+            ctx.options.max_visible_items(ctx.terminal.size()?.into()),
         );
     }
 

@@ -8,7 +8,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,20 +18,21 @@ struct ListAreas {
     selection: Option<Rect>,
 }
 
-pub(crate) fn launcher_visible_rows(total_height: u16, cli: &Opts) -> usize {
-    visible_rows(
-        launcher_list_content_area(Rect::new(0, 0, 1, total_height), cli).height,
-        cli,
+pub(crate) fn launcher_visible_rows(size: Rect, cli: &Opts) -> usize {
+    launcher_result_layout(size, cli).capacity()
+}
+
+pub(crate) fn launcher_result_layout(size: Rect, cli: &Opts) -> super::result_layout::ResultLayout {
+    super::result_layout::ResultLayout::new(
+        launcher_list_content_area(size, cli),
+        app_row_height(cli),
+        &cli.panels,
     )
 }
 
 pub(crate) fn launcher_list_content_area(size: Rect, cli: &Opts) -> Rect {
     let (_, _, items_area) = super::app_ui::launcher_panel_areas(size, cli);
     apps_block(cli).inner(items_area)
-}
-
-fn visible_rows(content_height: u16, cli: &Opts) -> usize {
-    usize::from(content_height / app_row_height(cli))
 }
 
 pub(crate) fn app_row_height(cli: &Opts) -> u16 {
@@ -44,7 +45,9 @@ pub(crate) fn app_row_height(cli: &Opts) -> u16 {
 
 pub(crate) fn launcher_list_icon_area(size: Rect, cli: &Opts) -> Rect {
     let inner = launcher_list_content_area(size, cli);
-    let content = list_content_area(inner, cli);
+    let slot =
+        super::result_layout::ResultLayout::new(inner, app_row_height(cli), &cli.panels).slot(0);
+    let content = list_content_area(slot, cli);
     let Some(icon_strip) = list_areas(content, cli).icon else {
         return Rect::default();
     };
@@ -56,89 +59,62 @@ pub(super) fn render(
     state: &State,
     cli: &Opts,
     area: Rect,
-    app_icons: Option<&mut AppIcons<'_>>,
+    mut app_icons: Option<&mut AppIcons<'_>>,
 ) -> Result<bool> {
     let block = apps_block(cli);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let content = list_content_area(inner, cli);
-
-    let row_height = app_row_height(cli);
-    let max_visible = visible_rows(inner.height, cli);
-    let visible_apps = state
+    let layout = super::result_layout::ResultLayout::new(inner, app_row_height(cli), &cli.panels);
+    let highlight = Style::default()
+        .fg(cli.highlight_color)
+        .add_modifier(Modifier::BOLD);
+    let mut render_failed = false;
+    for (index, app) in state
         .shown
         .iter()
         .skip(state.scroll_offset)
-        .take(max_visible)
-        .collect::<Vec<_>>();
-    let areas = list_areas(content, cli);
-    let selected_row = state.selected.and_then(|selected| {
-        (selected >= state.scroll_offset && selected < state.scroll_offset + max_visible)
-            .then_some(selected - state.scroll_offset)
-    });
-
-    let items = visible_apps
-        .iter()
+        .take(layout.capacity())
         .enumerate()
-        .map(|(row, app)| {
-            let mut spans = Vec::new();
-            if areas.selection.is_none() {
-                spans.extend(selection_marker_spans(cli, selected_row == Some(row)));
-            }
-            if app.pinned && cli.show_pin_icons {
-                spans.push(Span::styled(
-                    &cli.pin_icon,
-                    Style::default().fg(cli.pin_color),
-                ));
-                spans.push(Span::raw(" "));
-            }
+    {
+        let slot = layout.slot(index);
+        let selected = state.selected == Some(state.scroll_offset + index);
+        if selected {
+            super::render_selection_background(
+                frame,
+                slot,
+                cli.items_background_color,
+                cli.items_selection_background_color,
+                cli.items_selection_rounded,
+            );
+        }
+        let areas = list_areas(list_content_area(slot, cli), cli);
+        let mut spans = Vec::new();
+        if areas.selection.is_none() {
+            spans.extend(selection_marker_spans(cli, selected));
+        }
+        if app.pinned && cli.show_pin_icons {
             spans.push(Span::styled(
-                &app.name,
-                Style::default().fg(cli.items_text_color),
+                &cli.pin_icon,
+                Style::default().fg(cli.pin_color),
             ));
-
-            let mut lines = vec![Line::from(spans)];
-            lines.resize_with(usize::from(row_height), Line::default);
-            ListItem::new(lines)
-        })
-        .collect::<Vec<_>>();
-    let highlight_style = Style::default()
-        .fg(cli.highlight_color)
-        .add_modifier(Modifier::BOLD);
-    let list = List::new(items)
-        .highlight_style(highlight_style)
-        .highlight_symbol("");
-    let mut list_state = ListState::default();
-    if let Some(selected) = selected_row {
-        list_state.select(Some(selected));
-    }
-    if let Some(selected) = list_state.selected() {
-        let y = inner.y + selected as u16 * row_height;
-        let height = row_height.min(inner.y + inner.height - y);
-        super::render_selection_background(
-            frame,
-            Rect::new(inner.x, y, inner.width, height),
-            cli.items_background_color,
-            cli.items_selection_background_color,
-            cli.items_selection_rounded,
-        );
-    }
-    frame.render_stateful_widget(list, areas.text, &mut list_state);
-
-    if let (Some(selected), Some(selection_area)) = (list_state.selected(), areas.selection) {
-        let marker_area = selection_marker_area(selection_area, selected, row_height);
-        frame.render_widget(
-            Paragraph::new(format!("{} ", cli.selection_marker)).style(highlight_style),
-            marker_area,
-        );
-    }
-
-    let mut render_failed = false;
-    if let (Some(icons), Some(icon_strip)) = (app_icons, areas.icon) {
-        for (row, app) in visible_apps.iter().enumerate() {
-            let Some(icon) = app.icon.as_ref() else {
-                continue;
-            };
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::raw(&app.name));
+        let style = if selected {
+            highlight
+        } else {
+            Style::default().fg(cli.items_text_color)
+        };
+        frame.render_widget(Paragraph::new(Line::from(spans)).style(style), areas.text);
+        if selected && let Some(marker) = areas.selection {
+            frame.render_widget(
+                Paragraph::new(format!("{} ", cli.selection_marker)).style(highlight),
+                marker,
+            );
+        }
+        if let (Some(icons), Some(icon_area), Some(icon)) =
+            (app_icons.as_deref_mut(), areas.icon, app.icon.as_ref())
+        {
             if icons.failed_list_icons.contains(icon) {
                 continue;
             }
@@ -148,23 +124,16 @@ pub(super) fn render(
             if !icons.image_manager.is_cached(&placement.key) {
                 continue;
             }
-            let item_area = Rect::new(
-                icon_strip.x,
-                icon_strip.y + row as u16 * row_height,
-                icon_strip.width,
-                row_height,
-            );
-            let icon_area = overflow_icon_area(item_area, placement.top_overflow_rows);
-            if !icons
-                .image_manager
-                .render_cached(frame, &placement.key, icon_area)?
-            {
+            if !icons.image_manager.render_cached(
+                frame,
+                &placement.key,
+                overflow_icon_area(icon_area, placement.top_overflow_rows),
+            )? {
                 icons.failed_list_icons.insert(icon.clone());
                 render_failed = true;
             }
         }
     }
-
     Ok(render_failed)
 }
 
@@ -198,6 +167,7 @@ fn marker_gutter_width(cli: &Opts) -> u16 {
     width as u16 + 1
 }
 
+#[cfg(test)]
 fn selection_marker_area(area: Rect, selected: usize, row_height: u16) -> Rect {
     Rect::new(area.x, area.y + selected as u16 * row_height, area.width, 1)
 }

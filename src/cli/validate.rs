@@ -3,6 +3,12 @@ use super::launch::active_launch_method_count;
 use super::types::{DesktopIconMode, Opts};
 
 pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<(), CliError> {
+    default.panels.validate().map_err(CliError::message)?;
+    if default.dmenu_mode && default.panels.enabled() {
+        return Err(CliError::message(
+            "dmenu panel docking arrives in the next PR of this stack",
+        ));
+    }
     let hidden_commands = usize::from(default.list_hidden)
         + usize::from(default.unhide.is_some())
         + usize::from(default.unhide_all);

@@ -8,6 +8,8 @@ use crate::ui::{HorizontalPosition, InputPanelStyle, PanelPosition};
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FselConfig {
+    #[serde(default)]
+    pub panels: crate::ui::PanelSettings,
     #[serde(flatten)]
     pub general: GeneralConfig,
     #[serde(flatten)]

@@ -6,6 +6,7 @@ use crate::ui::{HorizontalPosition, InputPanelStyle, PanelPosition};
 /// Command line interface.
 #[derive(Debug)]
 pub struct Opts {
+    pub panels: crate::ui::PanelSettings,
     pub highlight_color: ratatui::style::Color,
     pub clear_history: bool,
     pub clear_cache: bool,
@@ -147,6 +148,7 @@ pub struct Opts {
 impl Default for Opts {
     fn default() -> Self {
         Self {
+            panels: crate::ui::PanelSettings::default(),
             highlight_color: ratatui::style::Color::LightBlue,
             clear_history: false,
             clear_cache: false,

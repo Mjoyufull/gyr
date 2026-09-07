@@ -1,3 +1,5 @@
+//! Merge defaults, file, environment, and explicit command arguments in order.
+
 mod helpers;
 mod overrides;
 

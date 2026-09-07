@@ -30,11 +30,10 @@ pub(super) fn draw(
     let force_buffer_sync = image_runtime.consume_buffer_sync();
 
     let draw_result = terminal.draw(|frame| {
-        let content_height = options.content_height(frame.area().height);
-        let show_content_panel = content_height > 0;
         let layout = options.split_layout(frame.area());
         let chunks = layout.chunks;
         let content_panel_index = layout.content_panel_index;
+        let show_content_panel = !chunks[content_panel_index].is_empty();
         let items_panel_index = layout.items_panel_index;
         let input_panel_index = layout.input_panel_index;
         let content_theme = crate::ui::PanelTheme {
@@ -58,9 +57,6 @@ pub(super) fn draw(
         let content_block = crate::ui::panel_block(" Clipboard Preview ", content_theme);
         let items_block = crate::ui::panel_block(" Clipboard History ", items_theme);
         let content_inner = content_block.inner(chunks[content_panel_index]);
-        let items_inner = items_block.inner(chunks[items_panel_index]);
-        let items_content =
-            crate::ui::selection_content_area(items_inner, options.items_selection_rounded);
 
         let preview_enabled = image_runtime.preview_enabled();
         match &ui.tag_mode {
@@ -90,7 +86,9 @@ pub(super) fn draw(
             .wrap(Wrap { trim: false })
             .scroll((0, 0));
 
-        max_visible = items_inner.height as usize;
+        let result_layout = options.result_layout(frame.area());
+        result_layout.keep_visible(ui.selected, &mut ui.scroll_offset);
+        max_visible = result_layout.capacity();
         let visible_items = ui
             .shown
             .iter()
@@ -104,15 +102,6 @@ pub(super) fn draw(
         } else {
             String::new()
         };
-        let items_list = List::new(visible_items)
-            .style(ratatui::style::Style::default().fg(options.items_text_color))
-            .highlight_style(panels::highlight_style(
-                ui,
-                tag_metadata_formatter,
-                options.highlight_color,
-            ))
-            .highlight_symbol(marker);
-
         let visible_selection = ui.selected.and_then(|selected| {
             if selected >= ui.scroll_offset && selected < ui.scroll_offset + max_visible {
                 Some(selected - ui.scroll_offset)
@@ -144,21 +133,33 @@ pub(super) fn draw(
         }
 
         frame.render_widget(items_block, chunks[items_panel_index]);
-        if let Some(selected) = visible_selection {
-            crate::ui::render_selection_background(
-                frame,
-                Rect::new(
-                    items_inner.x,
-                    items_inner.y + selected as u16,
-                    items_inner.width,
-                    1,
-                ),
-                options.items_background_color,
-                options.items_selection_background_color,
-                options.items_selection_rounded,
-            );
+        for (index, item) in visible_items.into_iter().enumerate() {
+            let slot = result_layout.slot(index);
+            let selected = visible_selection == Some(index);
+            if selected {
+                crate::ui::render_selection_background(
+                    frame,
+                    slot,
+                    options.items_background_color,
+                    options.items_selection_background_color,
+                    options.items_selection_rounded,
+                );
+            }
+            let item_area =
+                crate::ui::selection_content_area(slot, options.items_selection_rounded);
+            let list = List::new([item])
+                .style(ratatui::style::Style::default().fg(options.items_text_color))
+                .highlight_style(panels::highlight_style(
+                    ui,
+                    tag_metadata_formatter,
+                    options.highlight_color,
+                ))
+                .highlight_symbol(marker.as_str())
+                .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
+            let mut item_state = ListState::default();
+            item_state.select(selected.then_some(0));
+            frame.render_stateful_widget(list, item_area, &mut item_state);
         }
-        frame.render_stateful_widget(items_list, items_content, list_state);
 
         let input_lines = input::input_lines(ui, options);
         let selected_name = ui

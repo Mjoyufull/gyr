@@ -19,6 +19,44 @@ pub(super) fn parse_cli_overrides(
 
     while let Some(arg) = parser.next()? {
         match arg {
+            Long("info-position") => {
+                default.panels.info_position = Some(
+                    value_as_string(parser, "Invalid panel side")?
+                        .parse()
+                        .map_err(CliError::message)?,
+                );
+            }
+            Long("input-position") => {
+                default.panels.input_position = Some(
+                    value_as_string(parser, "Invalid panel side")?
+                        .parse()
+                        .map_err(CliError::message)?,
+                );
+            }
+            Long("info-size") => {
+                default.panels.info_size = Some(
+                    value_as_string(parser, "Invalid info size")?
+                        .parse()
+                        .map_err(|_| CliError::message("info size must be an integer"))?,
+                );
+            }
+            Long("input-size") => {
+                default.panels.input_size = Some(
+                    value_as_string(parser, "Invalid input size")?
+                        .parse()
+                        .map_err(|_| CliError::message("input size must be an integer"))?,
+                );
+            }
+            Long("layout-rotation") => {
+                default.panels.rotation = value_as_string(parser, "Invalid rotation")?
+                    .parse()
+                    .map_err(|_| CliError::message("layout rotation must be an integer"))?;
+            }
+            Long("item-width") => {
+                default.panels.item_width = value_as_string(parser, "Invalid item width")?
+                    .parse()
+                    .map_err(|_| CliError::message("item width must be an integer"))?;
+            }
             Short('t') | Long("tty") => {
                 default.tty = true;
                 default.terminal_launcher.clear();

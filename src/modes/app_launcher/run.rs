@@ -179,7 +179,10 @@ pub async fn run(cli: Opts) -> Result<()> {
                 needs_redraw =
                     matches!(&event, Event::Input(_) | Event::Mouse(_) | Event::Render);
                 let terminal_area = terminal.size()?;
-                let total_height = terminal_area.height;
+                if matches!(&event, Event::Render) {
+                    crate::ui::launcher_result_layout(terminal_area.into(), &cli)
+                        .keep_visible(state.selected, &mut state.scroll_offset);
+                }
                 if should_handle {
                     super::events::handle_event(
                         &mut state,
@@ -187,7 +190,7 @@ pub async fn run(cli: Opts) -> Result<()> {
                         &cli,
                         &db,
                         &hidden_store,
-                        total_height,
+                        terminal_area.into(),
                     );
                 }
                 icons.request_if_changed(&state, terminal_area.into(), &cli);

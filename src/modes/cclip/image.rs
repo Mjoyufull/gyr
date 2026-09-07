@@ -244,6 +244,7 @@ mod tests {
         explicit_image_preview: Option<bool>,
     ) -> super::super::state::CclipOptions {
         super::super::state::CclipOptions {
+            panels: crate::ui::PanelSettings::default(),
             disable_mouse: false,
             hard_stop: false,
             wrap_long_lines: true,
