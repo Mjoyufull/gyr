@@ -1,3 +1,5 @@
+//! Optional diagnostic log output and session timestamps.
+
 use crate::desktop::App;
 use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
@@ -25,7 +27,10 @@ pub fn init_test_log() -> std::io::Result<()> {
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     let timestamp = now
         .format(
-            &time::format_description::parse("[year][month][day]-[hour][minute][second]").unwrap(),
+            &time::format_description::parse_borrowed::<1>(
+                "[year][month][day]-[hour][minute][second]",
+            )
+            .expect("literal timestamp format is valid"),
         )
         .unwrap();
     let pid = std::process::id();
@@ -55,7 +60,7 @@ pub fn init_test_log() -> std::io::Result<()> {
         time::OffsetDateTime::now_local()
             .unwrap_or_else(|_| time::OffsetDateTime::now_utc())
             .format(
-                &time::format_description::parse(
+                &time::format_description::parse_borrowed::<1>(
                     "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
                 )
                 .unwrap()
@@ -266,7 +271,7 @@ pub fn log_session_end() {
             time::OffsetDateTime::now_local()
                 .unwrap_or_else(|_| time::OffsetDateTime::now_utc())
                 .format(
-                    &time::format_description::parse(
+                    &time::format_description::parse_borrowed::<1>(
                         "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
                     )
                     .unwrap()
