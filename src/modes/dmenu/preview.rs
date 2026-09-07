@@ -255,7 +255,7 @@ impl PreviewRuntime {
             self.content = PreviewContent::Text(message);
             return;
         }
-        if image::guess_format(&output.stdout).is_ok() {
+        if ImageManager::recognizes_image_bytes(&output.stdout) {
             let request = DecodeRequest {
                 generation,
                 key: image_key,
@@ -726,7 +726,7 @@ fn append_truncation_notice(text: &mut String, truncated: bool) {
 }
 
 fn truncated_image_message(output: &CommandOutput) -> Option<String> {
-    (output.stdout_truncated && image::guess_format(&output.stdout).is_ok()).then(|| {
+    (output.stdout_truncated && ImageManager::recognizes_image_bytes(&output.stdout)).then(|| {
         format!(
             "Preview image exceeds the {} MiB output limit",
             MAX_PREVIEW_BYTES / (1024 * 1024)

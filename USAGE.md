@@ -154,7 +154,7 @@ Place placeholders directly in the command rather than inside single quotes. Her
 templates are rejected because their expanded body can become source for another interpreter.
 
 The preview panel renders text output after stripping terminal escape sequences. If stdout contains
-PNG, JPEG, GIF, BMP, or WebP bytes, fsel renders the image using Kitty, Sixel, or its half-block
+PNG, JPEG, GIF, BMP, WebP, or SVG bytes, fsel renders the image using Kitty, Sixel, or its half-block
 fallback.
 
 ```sh

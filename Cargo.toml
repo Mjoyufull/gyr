@@ -57,6 +57,9 @@ strip-ansi-escapes = "0.2"
 tokio = { version = "1.49", features = ["rt-multi-thread", "process", "sync", "time", "macros", "io-util"] }
 ratatui-image = { version = "10.0", default-features = false, features = ["crossterm", "tokio"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
+flate2 = "1.1"
+resvg = { version = "0.47", default-features = false, features = ["text", "system-fonts", "raster-images"] }
+roxmltree = "0.21"
 futures = "0.3"
 unicode-width = "0.2.2"
 
