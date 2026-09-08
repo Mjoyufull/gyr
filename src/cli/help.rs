@@ -147,7 +147,8 @@ Usage:
 │  ├─ --select-index <N>           Start with row N preselected
 │  ├─ --auto-select                Accept automatically when the filtered list reaches one row
 │  ├─ --prompt-only                Show only the input prompt and hide the list pane
-│  └─ --preview <COMMAND>          Preview the selected row; supports {{}}, {{q}}, and {{n}}
+│  ├─ --preview <COMMAND>          Preview the selected row; supports {{}}, {{q}}, and {{n}}
+│  └─ --panel <NAME:SIDE:%:CMD>    Add a named command panel (maximum three)
 │
 ├─ Clipboard Mode Options
 │  ├─ --tag <NAME>                 Show only clipboard entries tagged NAME

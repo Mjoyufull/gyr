@@ -797,7 +797,45 @@ setting is omitted. With no docking controls, legacy `middle` placement is prese
 Negative desktop-icon alignment still intentionally permits overflow into neighboring rows
 or chrome. Moving a panel does not change that opt-in policy.
 
-## Design references
+## Dmenu command panels
+
+Dmenu supports the same `[panels]` docking settings and rotation controls as the launcher.
+`--preview` supplies the primary information panel; use `--info-position right --info-size 40`
+to place it beside the result list. Text and supported image bytes use the same preview command.
+
+```sh
+printf 'README.md\nCargo.toml\n' |
+  fsel --preview 'cat {}' --info-position right --info-size 40 \
+    --panel 'details:bottom:20:file --brief {}'
+```
+
+`--panel NAME:SIDE:PERCENT:COMMAND` adds a named panel and implies dmenu mode. It may be repeated
+up to three times in addition to the primary preview. The first three colons delimit the name,
+edge, and size; the remaining command may contain colons. Names must be unique and cannot be
+`preview`, `input`, or `items`. Edges are `top`, `right`, `bottom`, and `left`; sizes are 0–90
+percent of the remaining result region on that edge. A size of zero hides the panel and stops
+its command. Panels are allocated in declaration order after the primary information and input
+panels, leaving the result list as the remaining rectangle.
+
+Persistent panels use an array under `[dmenu]`:
+
+```toml
+[[dmenu.panels]]
+name = "details"
+position = "right"
+size = 30
+command = "file --brief {}"
+```
+
+CLI panels append to configured panels. Every panel uses the existing `{}`, `{q}`, and `{n}`
+placeholders, ANSI stripping, output limits, cancellation, and password-query isolation.
+Commands are trusted shell commands: only configure commands you intend to execute. Each panel
+has at most one active command and one decoding worker, with bounded result queues. Obsolete
+results cannot replace the current selection; the previous image remains visible while a new
+image is prepared. The primary and custom panels update independently. There is no interactive
+panel movement in this PR; these settings establish their startup positions.
+
+## Layout references
 
 - [fzf preview window options](https://github.com/junegunn/fzf/blob/master/man/man1/fzf.1)
 - [matchmaker preview layouts](https://github.com/Squirreljetpack/matchmaker#configuration)

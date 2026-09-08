@@ -191,6 +191,8 @@ pub struct LayoutConfig {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct DmenuConfig {
+    #[serde(default)]
+    pub panels: Vec<crate::modes::dmenu::panels::DmenuPanel>,
     pub delimiter: Option<String>,
     pub preview: Option<String>,
     pub password_character: Option<String>,

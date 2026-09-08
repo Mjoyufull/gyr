@@ -2,7 +2,7 @@
 
 use eyre::Result;
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Rect};
+use ratatui::layout::Alignment;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph, Wrap};
@@ -10,21 +10,22 @@ use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph, Wrap};
 use crate::ui::DmenuUI;
 
 use super::options::DmenuOptions;
-use super::preview::PreviewRuntime;
+use super::panels::PreviewPanels;
 
 pub(super) fn draw_frame(
     frame: &mut Frame,
     ui: &mut DmenuUI,
     list_state: &mut ListState,
     options: &DmenuOptions,
-    preview: &mut PreviewRuntime,
+    previews: &mut PreviewPanels,
 ) -> Result<()> {
-    let layout = options.split_layout(frame.area());
+    let preview = &mut previews.primary;
+    let (layout, custom_areas) = options.split_all(frame.area());
     let chunks = layout.chunks;
     let content_panel_index = layout.content_panel_index;
     let items_panel_index = layout.items_panel_index;
     let input_panel_index = layout.input_panel_index;
-    let show_content_panel = options.content_height(frame.area().height) > 0;
+    let show_content_panel = !chunks[content_panel_index].is_empty();
 
     let content_theme = crate::ui::PanelTheme {
         show_border: options.show_main_border,
@@ -60,10 +61,9 @@ pub(super) fn draw_frame(
         Some(ui.text.clone())
     };
 
-    let items_inner = items_block.inner(chunks[items_panel_index]);
-    let items_content =
-        crate::ui::selection_content_area(items_inner, options.items_selection_rounded);
-    let max_visible = items_inner.height as usize;
+    let result_layout = options.result_layout(frame.area());
+    result_layout.keep_visible(ui.selected, &mut ui.scroll_offset);
+    let max_visible = result_layout.capacity();
     let visible_items = ui
         .shown
         .iter()
@@ -77,15 +77,6 @@ pub(super) fn draw_frame(
     } else {
         String::new()
     };
-    let items_list = List::new(visible_items)
-        .style(Style::default().fg(options.items_text_color))
-        .highlight_style(
-            Style::default()
-                .fg(options.highlight_color)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(marker);
-
     let visible_selection = ui.selected.and_then(|selected| {
         if selected >= ui.scroll_offset && selected < ui.scroll_offset + max_visible {
             Some(selected - ui.scroll_offset)
@@ -128,21 +119,35 @@ pub(super) fn draw_frame(
     }
     if !options.prompt_only && (!options.hide_before_typing || !ui.query.is_empty()) {
         frame.render_widget(items_block, chunks[items_panel_index]);
-        if let Some(selected) = visible_selection {
-            crate::ui::render_selection_background(
-                frame,
-                Rect::new(
-                    items_inner.x,
-                    items_inner.y + selected as u16,
-                    items_inner.width,
-                    1,
-                ),
-                options.items_background_color,
-                options.items_selection_background_color,
-                options.items_selection_rounded,
+        for (index, item) in visible_items.into_iter().enumerate() {
+            let slot = result_layout.slot(index);
+            let selected = visible_selection == Some(index);
+            if selected {
+                crate::ui::render_selection_background(
+                    frame,
+                    slot,
+                    options.items_background_color,
+                    options.items_selection_background_color,
+                    options.items_selection_rounded,
+                );
+            }
+            let list = List::new([item])
+                .style(Style::default().fg(options.items_text_color))
+                .highlight_style(
+                    Style::default()
+                        .fg(options.highlight_color)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .highlight_symbol(marker.as_str())
+                .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
+            let mut item_state = ListState::default();
+            item_state.select(selected.then_some(0));
+            frame.render_stateful_widget(
+                list,
+                crate::ui::selection_content_area(slot, options.items_selection_rounded),
+                &mut item_state,
             );
         }
-        frame.render_stateful_widget(items_list, items_content, list_state);
     }
     let selected_name = ui
         .selected
@@ -176,6 +181,34 @@ pub(super) fn draw_frame(
             keybinds: &options.keybinds,
         },
     );
+    if !options.hide_before_typing || !ui.query.is_empty() {
+        for ((spec, runtime), area) in options
+            .custom_panels
+            .iter()
+            .zip(&mut previews.custom)
+            .zip(custom_areas)
+        {
+            if area.is_empty() {
+                continue;
+            }
+            let title = format!(" {} ", spec.name);
+            let block = crate::ui::panel_block(&title, content_theme);
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            if !runtime.render_image(frame, inner)? {
+                frame.render_widget(
+                    Paragraph::new(runtime.text_lines().unwrap_or_default())
+                        .style(
+                            Style::default()
+                                .fg(options.main_text_color)
+                                .bg(options.main_background_color),
+                        )
+                        .wrap(Wrap { trim: false }),
+                    inner,
+                );
+            }
+        }
+    }
     Ok(())
 }
 

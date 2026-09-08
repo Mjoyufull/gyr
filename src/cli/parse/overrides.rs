@@ -19,6 +19,14 @@ pub(super) fn parse_cli_overrides(
 
     while let Some(arg) = parser.next()? {
         match arg {
+            Long("panel") => {
+                let spec = value_as_string(parser, "Invalid panel specification")?;
+                default.dmenu_panels.push(
+                    crate::modes::dmenu::panels::DmenuPanel::parse(&spec)
+                        .map_err(CliError::message)?,
+                );
+                default.dmenu_mode = true;
+            }
             Long("info-position") => {
                 default.panels.info_position = Some(
                     value_as_string(parser, "Invalid panel side")?

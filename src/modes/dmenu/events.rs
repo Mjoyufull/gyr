@@ -16,7 +16,7 @@ pub(super) fn handle_key_event(
     ui: &mut DmenuUI,
     key: KeyEvent,
     options: &DmenuOptions,
-    terminal_height: u16,
+    terminal_area: ratatui::layout::Rect,
 ) -> LoopOutcome {
     match (key.code, key.modifiers) {
         (code, modifiers)
@@ -59,7 +59,11 @@ pub(super) fn handle_key_event(
                 Keybinds::matches_left,
             ) =>
         {
-            move_to_first(ui);
+            if options.panels.horizontal() {
+                move_selection(ui, options, terminal_area, -1);
+            } else {
+                move_to_first(ui);
+            }
         }
         (code, modifiers)
             if matches_dmenu_binding(
@@ -69,7 +73,11 @@ pub(super) fn handle_key_event(
                 Keybinds::matches_right,
             ) =>
         {
-            move_to_last(ui, options, terminal_height);
+            if options.panels.horizontal() {
+                move_selection(ui, options, terminal_area, 1);
+            } else {
+                move_to_last(ui, options, terminal_area);
+            }
         }
         (code, modifiers)
             if matches_dmenu_binding(
@@ -79,12 +87,12 @@ pub(super) fn handle_key_event(
                 Keybinds::matches_down,
             ) =>
         {
-            move_selection(ui, options, terminal_height, 1);
+            move_selection(ui, options, terminal_area, 1);
         }
         (code, modifiers)
             if matches_dmenu_binding(&options.keybinds, code, modifiers, Keybinds::matches_up) =>
         {
-            move_selection(ui, options, terminal_height, -1);
+            move_selection(ui, options, terminal_area, -1);
         }
         (KeyCode::Char(ch), KeyModifiers::NONE) | (KeyCode::Char(ch), KeyModifiers::SHIFT) => {
             ui.query.push(ch);
@@ -124,13 +132,17 @@ fn move_to_first(ui: &mut DmenuUI<'_>) {
     }
 }
 
-fn move_to_last(ui: &mut DmenuUI<'_>, options: &DmenuOptions, terminal_height: u16) {
+fn move_to_last(
+    ui: &mut DmenuUI<'_>,
+    options: &DmenuOptions,
+    terminal_area: ratatui::layout::Rect,
+) {
     let Some(last_index) = ui.shown.len().checked_sub(1) else {
         return;
     };
 
     ui.selected = Some(last_index);
-    let max_visible = options.max_visible_items(terminal_height);
+    let max_visible = options.max_visible_items(terminal_area);
     if max_visible > 0 && ui.shown.len() > max_visible {
         ui.scroll_offset = ui.shown.len().saturating_sub(max_visible);
     } else {
@@ -142,54 +154,33 @@ pub(super) fn handle_mouse_event(
     ui: &mut DmenuUI,
     mouse_event: MouseEvent,
     options: &DmenuOptions,
-    terminal_height: u16,
+    terminal_area: ratatui::layout::Rect,
 ) -> LoopOutcome {
-    let mouse_row = mouse_event.row;
-    let (items_content_start, max_visible_rows) = options.items_content_bounds(terminal_height);
-    let items_content_end = items_content_start + max_visible_rows;
-
-    let update_selection_for_mouse_pos = |ui: &mut DmenuUI, mouse_row: u16| {
-        if !ui.shown.is_empty() && mouse_row >= items_content_start && mouse_row < items_content_end
-        {
-            let row_in_content = mouse_row - items_content_start;
-            let hovered_item_index = ui.scroll_offset + row_in_content as usize;
-            if hovered_item_index < ui.shown.len() {
-                ui.selected = Some(hovered_item_index);
-                ui.info(options.highlight_color);
-            }
-        }
+    let geometry = options.result_layout(terminal_area);
+    let hit = geometry.hit(mouse_event.column, mouse_event.row);
+    let Some(relative) = hit else {
+        return LoopOutcome::Continue;
     };
-
+    let index = ui.scroll_offset + relative;
     match mouse_event.kind {
-        MouseEventKind::Moved => {
-            update_selection_for_mouse_pos(ui, mouse_row);
+        MouseEventKind::Moved if index < ui.shown.len() => {
+            ui.selected = Some(index);
+            ui.info(options.highlight_color);
         }
-        MouseEventKind::Down(MouseButton::Left)
-            if mouse_row >= items_content_start
-                && mouse_row < items_content_end
-                && !ui.shown.is_empty() =>
-        {
-            let row_in_content = mouse_row - items_content_start;
-            let clicked_item_index = ui.scroll_offset + row_in_content as usize;
-
-            if clicked_item_index < ui.shown.len() {
-                return LoopOutcome::Print(selected_output(ui, options, clicked_item_index));
-            }
+        MouseEventKind::Down(MouseButton::Left) if index < ui.shown.len() => {
+            return LoopOutcome::Print(selected_output(ui, options, index));
         }
-        MouseEventKind::ScrollUp if !ui.shown.is_empty() && ui.scroll_offset > 0 => {
+        MouseEventKind::ScrollUp if ui.scroll_offset > 0 => {
             ui.scroll_offset -= 1;
-            update_selection_for_mouse_pos(ui, mouse_row);
         }
-        MouseEventKind::ScrollDown if !ui.shown.is_empty() => {
-            let max_visible = max_visible_rows as usize;
-            if ui.scroll_offset + max_visible < ui.shown.len() {
-                ui.scroll_offset += 1;
-                update_selection_for_mouse_pos(ui, mouse_row);
-            }
+        MouseEventKind::ScrollDown if ui.scroll_offset + geometry.capacity() < ui.shown.len() => {
+            ui.scroll_offset += 1;
         }
         _ => {}
     }
-
+    if !ui.shown.is_empty() {
+        ui.selected = Some((ui.scroll_offset + relative).min(ui.shown.len() - 1));
+    }
     LoopOutcome::Continue
 }
 
@@ -231,7 +222,12 @@ fn auto_select_if_single_match(ui: &mut DmenuUI, options: &DmenuOptions) {
     }
 }
 
-fn move_selection(ui: &mut DmenuUI, options: &DmenuOptions, terminal_height: u16, direction: i32) {
+fn move_selection(
+    ui: &mut DmenuUI,
+    options: &DmenuOptions,
+    terminal_area: ratatui::layout::Rect,
+    direction: i32,
+) {
     let Some(selected) = ui.selected else {
         return;
     };
@@ -240,7 +236,8 @@ fn move_selection(ui: &mut DmenuUI, options: &DmenuOptions, terminal_height: u16
         return;
     };
 
-    ui.selected = if direction > 0 {
+    let forward = (direction > 0) != (options.panels.rotation >= 180);
+    ui.selected = if forward {
         if selected < last_index {
             Some(selected + 1)
         } else if !options.hard_stop {
@@ -260,7 +257,7 @@ fn move_selection(ui: &mut DmenuUI, options: &DmenuOptions, terminal_height: u16
         return;
     };
 
-    let max_visible = options.max_visible_items(terminal_height);
+    let max_visible = options.max_visible_items(terminal_area);
     if max_visible == 0 {
         ui.scroll_offset = 0;
     } else if new_selected < ui.scroll_offset {
@@ -297,7 +294,7 @@ mod tests {
                 crossterm::event::KeyModifiers::NONE,
             ),
             &DmenuOptions::from_cli(&Opts::default()),
-            20,
+            ratatui::layout::Rect::new(0, 0, 80, 20),
         );
 
         assert!(matches!(outcome, LoopOutcome::Print(output) if output == "typed"));
@@ -328,7 +325,7 @@ mod tests {
                 crossterm::event::KeyModifiers::NONE,
             ),
             &DmenuOptions::from_cli(&cli),
-            20,
+            ratatui::layout::Rect::new(0, 0, 80, 20),
         );
 
         assert!(matches!(outcome, LoopOutcome::Print(output) if output == "left:right"));
@@ -362,7 +359,7 @@ up = [{ key = "k", modifiers = "alt" }]
             &mut ui,
             KeyEvent::new(KeyCode::Char('j'), KeyModifiers::ALT),
             &options,
-            20,
+            ratatui::layout::Rect::new(0, 0, 80, 20),
         );
 
         assert!(matches!(outcome, LoopOutcome::Continue));
@@ -384,7 +381,7 @@ up = [{ key = "k", modifiers = "alt" }]
             &mut submit_ui,
             KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
             &options,
-            20,
+            ratatui::layout::Rect::new(0, 0, 80, 20),
         );
 
         assert!(matches!(submit, LoopOutcome::Print(output) if output == "one"));
@@ -395,7 +392,7 @@ up = [{ key = "k", modifiers = "alt" }]
             &mut backspace_ui,
             KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT),
             &options,
-            20,
+            ratatui::layout::Rect::new(0, 0, 80, 20),
         );
         assert_eq!(backspace_ui.query, "a");
     }
