@@ -1,10 +1,16 @@
 use super::helpers::{
     BOOLEAN_EXPECTED, INTEGER_EXPECTED, OverrideSource, PANEL_POSITION_EXPECTED,
-    set_optional_parsed, set_optional_string,
+    set_optional_parsed, set_optional_string, set_parsed,
 };
 use crate::config::{ConfigError, FselConfig};
 
 pub(super) fn apply(cfg: &mut FselConfig, source: &impl OverrideSource) -> Result<(), ConfigError> {
+    set_parsed(
+        source,
+        "FSEL_DMENU_PANEL_EDIT",
+        &mut cfg.dmenu.panel_edit,
+        BOOLEAN_EXPECTED,
+    )?;
     set_optional_string(source, "FSEL_DMENU_DELIMITER", &mut cfg.dmenu.delimiter);
     set_optional_string(source, "FSEL_DMENU_PREVIEW", &mut cfg.dmenu.preview);
     set_optional_string(

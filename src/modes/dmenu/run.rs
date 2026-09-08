@@ -51,12 +51,14 @@ pub async fn run(cli: &Opts) -> Result<()> {
         cli.dmenu_with_nth.as_ref(),
     );
 
-    let options = DmenuOptions::from_cli(cli);
+    let mut options = DmenuOptions::from_cli(cli);
+    let mut editor = super::movement::PanelEditor::new(cli.dmenu_panel_edit);
     crate::ui::terminal::setup_terminal(options.disable_mouse)?;
     let terminal_active = Cell::new(true);
+    let disable_mouse = options.disable_mouse;
     defer! {
         if terminal_active.get() {
-            let _ = crate::ui::terminal::shutdown_terminal(options.disable_mouse);
+            let _ = crate::ui::terminal::shutdown_terminal(disable_mouse);
         }
     }
 
@@ -85,6 +87,7 @@ pub async fn run(cli: &Opts) -> Result<()> {
                 terminal.draw(|frame| {
                     render_result =
                         draw_frame(frame, &mut ui, &mut list_state, &options, &mut preview);
+                    editor.render(frame, &options);
                 })?;
                 render_result
             })();
@@ -102,6 +105,11 @@ pub async fn run(cli: &Opts) -> Result<()> {
                 let Some(event) = maybe_event else {
                     break LoopOutcome::Exit;
                 };
+                if editor.handle(&event, &mut options, terminal.size()?.into()) {
+                    needs_redraw = true;
+                    preview.request(&ui, &options);
+                    continue;
+                }
                 let event_outcome = match event {
                     Event::Input(key) => {
                         needs_redraw = true;

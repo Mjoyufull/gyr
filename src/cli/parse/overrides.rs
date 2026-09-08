@@ -19,6 +19,10 @@ pub(super) fn parse_cli_overrides(
 
     while let Some(arg) = parser.next()? {
         match arg {
+            Long("panel-edit") => {
+                default.dmenu_panel_edit = true;
+                default.dmenu_mode = true;
+            }
             Long("panel") => {
                 let spec = value_as_string(parser, "Invalid panel specification")?;
                 default.dmenu_panels.push(

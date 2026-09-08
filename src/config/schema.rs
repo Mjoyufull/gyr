@@ -192,6 +192,8 @@ pub struct LayoutConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct DmenuConfig {
     #[serde(default)]
+    pub panel_edit: bool,
+    #[serde(default)]
     pub panels: Vec<crate::modes::dmenu::panels::DmenuPanel>,
     pub delimiter: Option<String>,
     pub preview: Option<String>,
