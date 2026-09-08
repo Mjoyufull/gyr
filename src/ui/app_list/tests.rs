@@ -275,3 +275,18 @@ fn pinned_colors_are_opt_in_and_do_not_change_unpinned_rows() {
         Some(Color::Black)
     );
 }
+#[test]
+fn grid_reserves_separate_artwork_and_label_rows() {
+    let cli = crate::cli::Opts {
+        app_grid_columns: 4,
+        app_grid_row_height: 4,
+        desktop_icon_mode: crate::cli::DesktopIconMode::List,
+        ..crate::cli::Opts::default()
+    };
+    let areas = super::list_areas(Rect::new(2, 5, 20, 4), &cli);
+    assert_eq!(areas.text, Rect::new(2, 8, 20, 1));
+    let icon = areas.icon.expect("list mode should show grid artwork");
+    assert_eq!(icon.height, 3);
+    assert!(icon.intersection(areas.text).is_empty());
+    assert_eq!(super::app_row_height(&cli), 4);
+}

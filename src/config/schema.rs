@@ -27,6 +27,8 @@ pub struct FselConfig {
 /// Legacy `[app_launcher]` section for backward compatibility.
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct AppLauncherConfig {
+    pub grid_columns: Option<u16>,
+    pub grid_row_height: Option<u16>,
     pub filter_desktop: Option<bool>,
     pub filter_actions: Option<bool>,
     pub auto_hide_duplicates: Option<bool>,

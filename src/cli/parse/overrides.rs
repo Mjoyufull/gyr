@@ -19,6 +19,16 @@ pub(super) fn parse_cli_overrides(
 
     while let Some(arg) = parser.next()? {
         match arg {
+            Long("app-grid") => {
+                default.app_grid_columns = value_as_string(parser, "Invalid grid columns")?
+                    .parse()
+                    .map_err(|_| CliError::message("grid columns must be an integer"))?;
+            }
+            Long("grid-row-height") => {
+                default.app_grid_row_height = value_as_string(parser, "Invalid grid height")?
+                    .parse()
+                    .map_err(|_| CliError::message("grid row height must be an integer"))?;
+            }
             Long("panel-edit") => {
                 default.dmenu_panel_edit = true;
                 default.dmenu_mode = true;
