@@ -8,6 +8,8 @@ use crate::ui::{HorizontalPosition, InputPanelStyle, PanelPosition};
 pub struct Opts {
     pub dmenu_panels: Vec<crate::modes::dmenu::panels::DmenuPanel>,
     pub dmenu_panel_edit: bool,
+    pub app_grid_columns: u16,
+    pub app_grid_row_height: u16,
     pub panels: crate::ui::PanelSettings,
     pub pinned_text_color: Option<ratatui::style::Color>,
     pub pinned_background_color: Option<ratatui::style::Color>,
@@ -156,6 +158,8 @@ impl Default for Opts {
         Self {
             dmenu_panels: Vec::new(),
             dmenu_panel_edit: false,
+            app_grid_columns: 0,
+            app_grid_row_height: 4,
             panels: crate::ui::PanelSettings::default(),
             pinned_text_color: None,
             pinned_background_color: None,

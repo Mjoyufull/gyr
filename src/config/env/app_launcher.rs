@@ -8,6 +8,18 @@ use crate::config::{ConfigError, FselConfig};
 pub(super) fn apply(cfg: &mut FselConfig, source: &impl OverrideSource) -> Result<(), ConfigError> {
     set_optional_parsed(
         source,
+        "FSEL_APP_LAUNCHER_GRID_COLUMNS",
+        &mut cfg.app_launcher.grid_columns,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
+        "FSEL_APP_LAUNCHER_GRID_ROW_HEIGHT",
+        &mut cfg.app_launcher.grid_row_height,
+        INTEGER_EXPECTED,
+    )?;
+    set_optional_parsed(
+        source,
         "FSEL_APP_LAUNCHER_FILTER_DESKTOP",
         &mut cfg.app_launcher.filter_desktop,
         BOOLEAN_EXPECTED,

@@ -35,6 +35,14 @@ pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<
         && !default.clear_cache
         && !default.refresh_cache;
     if uses_desktop_icons
+        && default.app_grid_columns > 0
+        && (default.app_grid_columns > 64 || !(2..=16).contains(&default.app_grid_row_height))
+    {
+        return Err(CliError::message(
+            "grid columns must be 1-64 and grid row height must be 2-16",
+        ));
+    }
+    if uses_desktop_icons
         && default.desktop_icon_mode.shows_preview()
         && !(10..=90).contains(&default.desktop_icon_preview_width_percent)
     {
@@ -76,6 +84,7 @@ pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<
     }
     if uses_desktop_icons
         && default.desktop_icon_mode.shows_list()
+        && default.app_grid_columns == 0
         && !(1..=8).contains(&default.desktop_icon_list_height)
     {
         return Err(CliError::message(
@@ -84,6 +93,7 @@ pub(super) fn validate(default: &mut Opts, cli_launch_methods: usize) -> Result<
     }
     if uses_desktop_icons
         && default.desktop_icon_mode.shows_list()
+        && default.app_grid_columns == 0
         && default.desktop_icon_list_gap > 16
     {
         return Err(CliError::message(
@@ -196,6 +206,31 @@ Available methods: --launch-prefix, --systemd-run, --uwsm\n",
 mod tests {
     use super::validate;
     use crate::cli::{DesktopIconMode, Opts};
+
+    #[test]
+    fn grid_dimensions_are_validated_only_when_active() {
+        for (columns, height) in [(65, 4), (4, 1), (4, 17)] {
+            let mut cli = Opts {
+                app_grid_columns: columns,
+                app_grid_row_height: height,
+                ..Default::default()
+            };
+            assert!(validate(&mut cli, 0).is_err());
+        }
+        let mut disabled = Opts {
+            app_grid_row_height: 0,
+            ..Default::default()
+        };
+        assert!(validate(&mut disabled, 0).is_ok());
+        let mut grid = Opts {
+            app_grid_columns: 4,
+            desktop_icon_mode: DesktopIconMode::List,
+            desktop_icon_list_height: 0,
+            desktop_icon_list_gap: 99,
+            ..Default::default()
+        };
+        assert!(validate(&mut grid, 0).is_ok());
+    }
 
     #[test]
     fn reject_both_index_modes() {

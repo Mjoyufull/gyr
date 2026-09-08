@@ -99,6 +99,34 @@ fn handle_key_event(
         state.should_exit = true;
     }
 
+    if cli.app_grid_columns > 0 && matches!(msg, Message::MoveUp | Message::MoveDown) {
+        let layout = crate::ui::launcher_result_layout(terminal_area, cli);
+        if let Some(selected) = state.selected {
+            let vertical = cli.keybinds.matches_up(key.code, key.modifiers)
+                || cli.keybinds.matches_down(key.code, key.modifiers);
+            let backwards = matches!(msg, Message::MoveUp) ^ (cli.panels.rotation >= 180);
+            let next = grid_neighbor(
+                selected,
+                state.shown.len(),
+                if matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+                    1
+                } else {
+                    layout.navigation_step(vertical)
+                },
+                backwards,
+                cli.hard_stop,
+            );
+            crate::core::state::update(
+                state,
+                Message::SelectIndex(next),
+                cli.hard_stop,
+                max_visible,
+            );
+        }
+        layout.keep_visible(state.selected, &mut state.scroll_offset);
+        refresh_info(state, cli);
+        return;
+    }
     let oriented = if cli.panels.rotation >= 180 {
         match msg {
             Message::MoveUp => Message::MoveDown,
@@ -109,6 +137,8 @@ fn handle_key_event(
         msg
     };
     crate::core::state::update(state, oriented, cli.hard_stop, max_visible);
+    crate::ui::launcher_result_layout(terminal_area, cli)
+        .keep_visible(state.selected, &mut state.scroll_offset);
     refresh_info(state, cli);
 }
 
@@ -149,7 +179,7 @@ fn handle_mouse_event(
                 && !state.shown.is_empty()
                 && state.scroll_offset + metrics.capacity() < state.shown.len()
             {
-                state.scroll_offset += 1;
+                state.scroll_offset = state.scroll_offset.saturating_add(metrics.scroll_step());
                 if let Some(index) = metrics.hit(mouse_event.column, mouse_event.row) {
                     state.selected = Some((state.scroll_offset + index).min(state.shown.len() - 1));
                 }
@@ -162,7 +192,7 @@ fn handle_mouse_event(
                 && !state.shown.is_empty()
                 && state.scroll_offset > 0
             {
-                state.scroll_offset -= 1;
+                state.scroll_offset = state.scroll_offset.saturating_sub(metrics.scroll_step());
                 if let Some(index) = metrics.hit(mouse_event.column, mouse_event.row) {
                     state.selected = Some((state.scroll_offset + index).min(state.shown.len() - 1));
                 }
@@ -180,6 +210,41 @@ fn handle_mouse_event(
 
         crate::core::state::update(state, msg, cli.hard_stop, metrics.capacity());
         refresh_info(state, cli);
+    }
+}
+
+fn grid_neighbor(
+    selected: usize,
+    len: usize,
+    step: usize,
+    backwards: bool,
+    hard_stop: bool,
+) -> usize {
+    if len == 0 {
+        return selected;
+    }
+    let next = if backwards {
+        selected.checked_sub(step)
+    } else {
+        selected.checked_add(step).filter(|index| *index < len)
+    };
+    if let Some(next) = next {
+        return next;
+    }
+    if hard_stop {
+        return selected;
+    }
+    let step = step % len;
+    if backwards {
+        if step > selected {
+            len - (step - selected)
+        } else {
+            selected - step
+        }
+    } else if step >= len - selected {
+        step - (len - selected)
+    } else {
+        selected + step
     }
 }
 
@@ -276,4 +341,16 @@ fn list_metrics(
     cli: &Opts,
 ) -> crate::ui::result_layout::ResultLayout {
     crate::ui::launcher_result_layout(terminal_area, cli)
+}
+
+#[cfg(test)]
+mod grid_tests {
+    #[test]
+    fn grid_navigation_steps_by_row_and_respects_hard_stop() {
+        assert_eq!(super::grid_neighbor(2, 11, 4, false, false), 6);
+        assert_eq!(super::grid_neighbor(2, 11, 4, true, true), 2);
+        assert_eq!(super::grid_neighbor(2, 11, 4, true, false), 9);
+        assert_eq!(super::grid_neighbor(9, 11, 4, false, false), 2);
+        assert_eq!(super::grid_neighbor(9, 11, 4, false, true), 9);
+    }
 }

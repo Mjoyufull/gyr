@@ -91,6 +91,12 @@ fn apply_app_launcher_overrides(default: &mut Opts, fsel_config: &FselConfig) {
     if let Some(height) = fsel_config.app_launcher.icon_list_height {
         default.desktop_icon_list_height = height;
     }
+    if let Some(columns) = fsel_config.app_launcher.grid_columns {
+        default.app_grid_columns = columns;
+    }
+    if let Some(height) = fsel_config.app_launcher.grid_row_height {
+        default.app_grid_row_height = height;
+    }
     if let Some(gap) = fsel_config.app_launcher.icon_list_gap {
         default.desktop_icon_list_gap = gap;
     }
