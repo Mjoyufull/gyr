@@ -623,7 +623,10 @@ fn prepare_icon(
 }
 
 fn icon_lookup_size(resolver: &IconResolver, picker: &Picker, area: Rect) -> u16 {
-    let (font_width, font_height) = picker.font_size();
+    let ratatui_image::FontSize {
+        width: font_width,
+        height: font_height,
+    } = picker.font_size();
     let width = u32::from(area.width).saturating_mul(u32::from(font_width));
     let height = u32::from(area.height).saturating_mul(u32::from(font_height));
     let rendered_size = width.min(height).min(u32::from(u16::MAX)) as u16;
