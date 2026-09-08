@@ -63,7 +63,7 @@ pub async fn run(cli: &Opts) -> Result<()> {
     let backend = CrosstermBackend::new(io::stderr());
     let mut terminal = Terminal::new(backend).wrap_err("Failed to start crossterm terminal")?;
     terminal.hide_cursor().wrap_err("Failed to hide cursor")?;
-    terminal.clear().wrap_err("Failed to clear terminal")?;
+    crate::ui::terminal::clear_fullscreen(&mut terminal).wrap_err("Failed to clear terminal")?;
 
     let mut input = options.input_config().init_async();
     let mut ui = build_ui(cli, items, options.highlight_color);
@@ -80,26 +80,15 @@ pub async fn run(cli: &Opts) -> Result<()> {
         if needs_redraw {
             sync_update_mode(options.term_is_foot, true);
             let frame_result = (|| -> Result<()> {
-                for _ in 0..2 {
-                    if preview.needs_terminal_clear() {
-                        terminal.clear()?;
-                        preview.finish_draw();
-                    }
-                    let mut render_result = Ok(());
-                    terminal.draw(|frame| {
-                        render_result =
-                            draw_frame(frame, &mut ui, &mut list_state, &options, &mut preview);
-                    })?;
-                    render_result?;
-                    if !preview.needs_terminal_clear() {
-                        break;
-                    }
-                }
-                Ok(())
+                let mut render_result = Ok(());
+                terminal.draw(|frame| {
+                    render_result =
+                        draw_frame(frame, &mut ui, &mut list_state, &options, &mut preview);
+                })?;
+                render_result
             })();
             sync_update_mode(options.term_is_foot, false);
             frame_result?;
-            preview.finish_draw();
             needs_redraw = false;
         }
 

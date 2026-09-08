@@ -60,7 +60,7 @@ impl ImageRuntime {
         }
         .await;
 
-        terminal.clear().wrap_err("Failed to clear terminal")?;
+        crate::ui::terminal::clear_fullscreen(terminal).wrap_err("Failed to clear terminal")?;
         self.restore_display_state();
         self.request_buffer_sync();
         preview_result
