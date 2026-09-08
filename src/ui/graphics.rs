@@ -139,7 +139,10 @@ impl ImageManager {
         horizontal_align: u16,
         vertical_align: i16,
     ) -> Result<PreparedFixedImage> {
-        let (font_width, font_height) = picker.font_size();
+        let ratatui_image::FontSize {
+            width: font_width,
+            height: font_height,
+        } = picker.font_size();
         let pixel_width = u32::from(area.width).saturating_mul(u32::from(font_width));
         let pixel_height = u32::from(area.height).saturating_mul(u32::from(font_height));
         let svg_dimension = pixel_width.max(pixel_height).max(1);
@@ -159,7 +162,11 @@ impl ImageManager {
             .saturating_mul(u64::from(protocol_height))
             .saturating_mul(u64::from(font_height))
             .saturating_mul(4);
-        let protocol = picker.new_protocol(normalized.image, protocol_area, Resize::Scale(None))?;
+        let protocol = picker.new_protocol(
+            normalized.image,
+            protocol_area.as_size(),
+            Resize::Scale(None),
+        )?;
         Ok(PreparedFixedImage {
             protocol,
             retained_bytes,
