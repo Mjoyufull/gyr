@@ -195,6 +195,7 @@ fn apply_dmenu_config(default: &mut Opts, fsel_config: &FselConfig) {
     }
     default.dmenu_preview = fsel_config.dmenu.preview.clone();
     default.dmenu_panels = fsel_config.dmenu.panels.clone();
+    default.dmenu_panel_edit = fsel_config.dmenu.panel_edit;
     if let Some(show_line_numbers) = fsel_config.dmenu.show_line_numbers {
         default.dmenu_show_line_numbers = show_line_numbers;
     }

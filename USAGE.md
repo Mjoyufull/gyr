@@ -832,8 +832,32 @@ placeholders, ANSI stripping, output limits, cancellation, and password-query is
 Commands are trusted shell commands: only configure commands you intend to execute. Each panel
 has at most one active command and one decoding worker, with bounded result queues. Obsolete
 results cannot replace the current selection; the previous image remains visible while a new
-image is prepared. The primary and custom panels update independently. There is no interactive
-panel movement in this PR; these settings establish their startup positions.
+image is prepared. The primary and custom panels update independently.
+
+### Moving dmenu panels interactively
+
+Add `--panel-edit` to enable **Alt+P**. Without this option, existing key handling is unchanged.
+The persistent equivalent is `panel_edit = true` under `[dmenu]`; the environment equivalent is
+`FSEL_DMENU_PANEL_EDIT=true`.
+
+```sh
+printf 'README.md\nCargo.toml\n' |
+  fsel --preview 'cat {}' --panel 'details:right:30:file --brief {}' --panel-edit
+```
+
+Press Alt+P to enter layout editing. A banner names the focused panel. Tab and Shift+Tab cycle
+between the primary preview, input, and custom panels, including hidden panels. Arrow keys dock
+the focused panel on the corresponding screen edge, even when the layout is rotated. `+`/`-`
+grow/shrink information and custom panels by five percentage points, or input by one cell. Zero
+hides a panel; growing it makes it visible again. The result list always receives the remaining
+space. Click a panel to focus it and drag toward a result-list edge to dock it there. Mouse wheel
+up/down grows/shrinks the focused panel. Mouse controls require mouse capture to be enabled.
+
+Escape, Enter, or Alt+P leaves layout editing without selecting an item. Normal query editing,
+selection, and scrolling resume afterward. While editing, typing and mouse clicks cannot launch
+or select a result. Layout changes affect only this process: neither the configuration file nor
+the original stdin rows are modified. Terminal resizing preserves the requested positions/sizes,
+clamping visible rectangles to the available space.
 
 ## Layout references
 
