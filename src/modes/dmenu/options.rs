@@ -5,11 +5,11 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 
 use crate::cli::{Opts, PanelPosition};
-use crate::ui::{
-    GraphicsAdapter, InputPanelStyle, Keybinds, effective_content_height, items_panel_bounds,
-};
+use crate::ui::{GraphicsAdapter, InputPanelStyle, Keybinds, effective_content_height};
 
 pub(super) struct DmenuOptions {
+    pub(super) panels: crate::ui::PanelSettings,
+    pub(super) custom_panels: Vec<super::panels::DmenuPanel>,
     pub(super) disable_mouse: bool,
     pub(super) prompt_only: bool,
     pub(super) hide_before_typing: bool,
@@ -57,6 +57,8 @@ pub(super) struct DmenuOptions {
 impl DmenuOptions {
     pub(super) fn from_cli(cli: &Opts) -> Self {
         Self {
+            panels: cli.panels.clone(),
+            custom_panels: cli.dmenu_panels.clone(),
             disable_mouse: cli.dmenu_disable_mouse.unwrap_or(cli.disable_mouse),
             prompt_only: cli.dmenu_prompt_only,
             hide_before_typing: cli.dmenu_hide_before_typing,
@@ -148,35 +150,73 @@ impl DmenuOptions {
         effective_content_height(total_height, self.content_panel_height_percent)
     }
 
-    pub(super) fn max_visible_items(&self, total_height: u16) -> usize {
-        self.items_content_bounds(total_height).1 as usize
+    pub(super) fn max_visible_items(&self, area: Rect) -> usize {
+        self.result_layout(area).capacity()
     }
 
-    pub(super) fn items_panel_bounds(&self, total_height: u16) -> (u16, u16) {
-        items_panel_bounds(
-            total_height,
-            self.content_height(total_height),
-            self.input_panel_height,
-            self.content_panel_position,
-        )
-    }
-
-    pub(super) fn items_content_bounds(&self, total_height: u16) -> (u16, u16) {
-        let (start, height) = self.items_panel_bounds(total_height);
-        let border = u16::from(self.show_items_border);
-        (
-            start.saturating_add(border),
-            height.saturating_sub(border.saturating_mul(2)),
+    pub(super) fn result_layout(&self, area: Rect) -> crate::ui::result_layout::ResultLayout {
+        let layout = self.split_layout(area);
+        let block = crate::ui::panel_block(
+            " Items ",
+            crate::ui::PanelTheme {
+                show_border: self.show_items_border,
+                show_title: self.show_panel_titles,
+                bold_title: true,
+                rounded_border: self.rounded_borders,
+                border_color: self.items_border_color,
+                background_color: self.items_background_color,
+                title_color: self.header_title_color,
+            },
+        );
+        crate::ui::result_layout::ResultLayout::new(
+            block.inner(layout.chunks[layout.items_panel_index]),
+            1,
+            &self.panels,
         )
     }
 
     pub(super) fn split_layout(&self, area: Rect) -> crate::ui::PanelLayout {
-        crate::ui::split_content_panels(
-            area,
-            self.content_height(area.height),
-            self.input_panel_height,
-            self.content_panel_position,
-        )
+        self.split_all(area).0
+    }
+
+    pub(super) fn split_all(&self, area: Rect) -> (crate::ui::PanelLayout, Vec<Rect>) {
+        let mut layout = if self.panels.enabled() {
+            let (info, input, items) = self.panels.split(
+                area,
+                self.content_panel_height_percent,
+                self.input_panel_height,
+                self.content_panel_position,
+            );
+            crate::ui::PanelLayout {
+                chunks: [info, items, input],
+                content_panel_index: 0,
+                items_panel_index: 1,
+                input_panel_index: 2,
+            }
+        } else {
+            crate::ui::split_content_panels(
+                area,
+                self.content_height(area.height),
+                self.input_panel_height,
+                self.content_panel_position,
+            )
+        };
+        let mut custom = Vec::with_capacity(self.custom_panels.len());
+        let mut remaining = layout.chunks[layout.items_panel_index];
+        for panel in &self.custom_panels {
+            let side = panel.position.rotated(self.panels.rotation);
+            let total = if side.horizontal() {
+                remaining.width
+            } else {
+                remaining.height
+            };
+            let cells = (u32::from(total) * u32::from(panel.size) / 100) as u16;
+            let (rect, rest) = crate::ui::panels::dock(remaining, side, cells);
+            custom.push(rect);
+            remaining = rest;
+        }
+        layout.chunks[layout.items_panel_index] = remaining;
+        (layout, custom)
     }
 }
 
@@ -185,6 +225,7 @@ mod tests {
     use super::DmenuOptions;
     use crate::cli::Opts;
     use crate::ui::InputPanelStyle;
+    use ratatui::layout::Rect;
     use ratatui::style::Color;
 
     #[test]
@@ -224,14 +265,53 @@ mod tests {
     }
 
     #[test]
+    fn custom_panels_partition_space_without_overlap_at_every_rotation() {
+        for rotation in [0, 90, 180, 270] {
+            let mut cli = Opts::default();
+            cli.panels.rotation = rotation;
+            cli.dmenu_panels = vec![
+                super::super::panels::DmenuPanel::parse("details:left:30:printf details")
+                    .expect("valid panel"),
+                super::super::panels::DmenuPanel::parse("extra:bottom:20:printf extra")
+                    .expect("valid panel"),
+            ];
+            let options = DmenuOptions::from_cli(&cli);
+            for (width, height) in [(0, 0), (1, 1), (2, 3), (80, 40)] {
+                let area = Rect::new(3, 5, width, height);
+                let (layout, custom) = options.split_all(area);
+                let rectangles: Vec<_> = layout.chunks.into_iter().chain(custom).collect();
+                assert_eq!(
+                    rectangles
+                        .iter()
+                        .map(|r| u32::from(r.width) * u32::from(r.height))
+                        .sum::<u32>(),
+                    u32::from(width) * u32::from(height)
+                );
+                for (index, rectangle) in rectangles.iter().enumerate() {
+                    for other in &rectangles[index + 1..] {
+                        assert!(rectangle.intersection(*other).is_empty());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn borderless_dmenu_mouse_area_uses_released_rows() {
         let bordered = DmenuOptions::from_cli(&Opts::default());
         let borderless = DmenuOptions::from_cli(&Opts {
             show_items_border: false,
+            show_panel_titles: false,
             ..Opts::default()
         });
 
-        assert_eq!(bordered.items_content_bounds(40), (13, 23));
-        assert_eq!(borderless.items_content_bounds(40), (12, 25));
+        assert_eq!(
+            bordered.result_layout(Rect::new(0, 0, 80, 40)).slot(0).y,
+            13
+        );
+        assert_eq!(
+            borderless.result_layout(Rect::new(0, 0, 80, 40)).slot(0).y,
+            12
+        );
     }
 }

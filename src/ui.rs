@@ -23,9 +23,7 @@ pub use graphics::{DISPLAY_STATE, DisplayState, GraphicsAdapter, ImageManager};
 pub use input::{AsyncInput, Config as InputConfig, Event as InputEvent, Input};
 pub(crate) use input_panel::{InputPanelData, InputPanelTheme, render_panel as render_input_panel};
 pub use keybinds::Keybinds;
-pub(crate) use panel_layout::{
-    PanelLayout, effective_content_height, items_panel_bounds, split_content_panels,
-};
+pub(crate) use panel_layout::{PanelLayout, effective_content_height, split_content_panels};
 pub use panels::PanelSettings;
 pub use types::*;
 pub(crate) use visual::{

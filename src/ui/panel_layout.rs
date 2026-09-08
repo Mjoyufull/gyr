@@ -19,6 +19,7 @@ pub(crate) fn effective_content_height(total_height: u16, content_panel_percent:
     }
 }
 
+#[cfg(test)]
 pub(crate) fn items_panel_height(
     total_height: u16,
     content_height: u16,
@@ -27,6 +28,7 @@ pub(crate) fn items_panel_height(
     total_height.saturating_sub(content_height.saturating_add(input_panel_height))
 }
 
+#[cfg(test)]
 pub(crate) fn items_panel_bounds(
     total_height: u16,
     content_height: u16,

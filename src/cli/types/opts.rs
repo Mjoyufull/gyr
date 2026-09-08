@@ -6,6 +6,7 @@ use crate::ui::{HorizontalPosition, InputPanelStyle, PanelPosition};
 /// Command line interface.
 #[derive(Debug)]
 pub struct Opts {
+    pub dmenu_panels: Vec<crate::modes::dmenu::panels::DmenuPanel>,
     pub panels: crate::ui::PanelSettings,
     pub pinned_text_color: Option<ratatui::style::Color>,
     pub pinned_background_color: Option<ratatui::style::Color>,
@@ -152,6 +153,7 @@ pub struct Opts {
 impl Default for Opts {
     fn default() -> Self {
         Self {
+            dmenu_panels: Vec::new(),
             panels: crate::ui::PanelSettings::default(),
             pinned_text_color: None,
             pinned_background_color: None,
