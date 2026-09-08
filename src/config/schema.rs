@@ -98,6 +98,14 @@ pub struct GeneralConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UiConfig {
+    #[serde(default)]
+    pub pinned_text_color: Option<String>,
+    #[serde(default)]
+    pub pinned_background_color: Option<String>,
+    #[serde(default)]
+    pub pinned_highlight_color: Option<String>,
+    #[serde(default)]
+    pub pinned_selection_background_color: Option<String>,
     #[serde(default = "super::defaults::default_highlight_color")]
     pub highlight_color: String,
     #[serde(default = "super::defaults::default_cursor")]

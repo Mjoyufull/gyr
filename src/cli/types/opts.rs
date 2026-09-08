@@ -7,6 +7,10 @@ use crate::ui::{HorizontalPosition, InputPanelStyle, PanelPosition};
 #[derive(Debug)]
 pub struct Opts {
     pub panels: crate::ui::PanelSettings,
+    pub pinned_text_color: Option<ratatui::style::Color>,
+    pub pinned_background_color: Option<ratatui::style::Color>,
+    pub pinned_highlight_color: Option<ratatui::style::Color>,
+    pub pinned_selection_background_color: Option<ratatui::style::Color>,
     pub highlight_color: ratatui::style::Color,
     pub clear_history: bool,
     pub clear_cache: bool,
@@ -149,6 +153,10 @@ impl Default for Opts {
     fn default() -> Self {
         Self {
             panels: crate::ui::PanelSettings::default(),
+            pinned_text_color: None,
+            pinned_background_color: None,
+            pinned_highlight_color: None,
+            pinned_selection_background_color: None,
             highlight_color: ratatui::style::Color::LightBlue,
             clear_history: false,
             clear_cache: false,

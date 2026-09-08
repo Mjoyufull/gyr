@@ -730,6 +730,27 @@ This means you've placed a **color/UI option inside the [app_launcher] section**
 - Images: `image_preview`, `hide_inline_image_message`
 # Panel layouts
 
+## Pinned application colors
+
+Pinned launcher rows can use their own text and background colors, independently of the pin glyph.
+Put these optional settings at the root of the configuration, outside `[app_launcher]`:
+
+```toml
+pinned_text_color = "#e4c779"
+pinned_background_color = "#252219"
+pinned_highlight_color = "#101010"
+pinned_selection_background_color = "#e4c779"
+```
+
+Unselected pins use the first two colors; selected pins use the latter two. Omitted values inherit
+`items_text_color`, `items_background_color`, `highlight_color`, and
+`items_selection_background_color`, respectively. Ordinary rows are unaffected. `pin_color`
+continues to style the glyph, and pinned-row colors still work with `show_pin_icons = false`.
+The same names prefixed with `FSEL_` and uppercased are environment overrides—for example,
+`FSEL_PINNED_SELECTION_BACKGROUND_COLOR=Blue`. Rounded selection caps and icon placement are unchanged.
+
+## Docking panels
+
 The result list anchors the layout. Information and input panels can dock on any edge.
 Text stays upright when the layout rotates. Existing configurations retain their layout until
 one of the new docking settings is supplied.

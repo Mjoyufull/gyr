@@ -65,9 +65,6 @@ pub(super) fn render(
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let layout = super::result_layout::ResultLayout::new(inner, app_row_height(cli), &cli.panels);
-    let highlight = Style::default()
-        .fg(cli.highlight_color)
-        .add_modifier(Modifier::BOLD);
     let mut render_failed = false;
     for (index, app) in state
         .shown
@@ -78,12 +75,17 @@ pub(super) fn render(
     {
         let slot = layout.slot(index);
         let selected = state.selected == Some(state.scroll_offset + index);
+        let (style, background, selection_background) = row_style(cli, app.pinned, selected);
+        frame.render_widget(
+            Block::default().style(Style::default().bg(background)),
+            slot,
+        );
         if selected {
             super::render_selection_background(
                 frame,
                 slot,
-                cli.items_background_color,
-                cli.items_selection_background_color,
+                background,
+                selection_background,
                 cli.items_selection_rounded,
             );
         }
@@ -100,15 +102,10 @@ pub(super) fn render(
             spans.push(Span::raw(" "));
         }
         spans.push(Span::raw(&app.name));
-        let style = if selected {
-            highlight
-        } else {
-            Style::default().fg(cli.items_text_color)
-        };
         frame.render_widget(Paragraph::new(Line::from(spans)).style(style), areas.text);
         if selected && let Some(marker) = areas.selection {
             frame.render_widget(
-                Paragraph::new(format!("{} ", cli.selection_marker)).style(highlight),
+                Paragraph::new(format!("{} ", cli.selection_marker)).style(style),
                 marker,
             );
         }
@@ -135,6 +132,46 @@ pub(super) fn render(
         }
     }
     Ok(render_failed)
+}
+
+fn row_style(
+    cli: &Opts,
+    pinned: bool,
+    selected: bool,
+) -> (Style, ratatui::style::Color, ratatui::style::Color) {
+    let text = if selected {
+        if pinned {
+            cli.pinned_highlight_color.unwrap_or(cli.highlight_color)
+        } else {
+            cli.highlight_color
+        }
+    } else if pinned {
+        cli.pinned_text_color.unwrap_or(cli.items_text_color)
+    } else {
+        cli.items_text_color
+    };
+    let background = if pinned {
+        cli.pinned_background_color
+            .unwrap_or(cli.items_background_color)
+    } else {
+        cli.items_background_color
+    };
+    let selection = if pinned {
+        cli.pinned_selection_background_color
+            .unwrap_or(cli.items_selection_background_color)
+    } else {
+        cli.items_selection_background_color
+    };
+    let style = Style::default().fg(text);
+    (
+        if selected {
+            style.add_modifier(Modifier::BOLD)
+        } else {
+            style
+        },
+        background,
+        selection,
+    )
 }
 
 fn overflow_icon_area(item_area: Rect, top_overflow_rows: u16) -> Rect {

@@ -91,6 +91,10 @@ impl Default for GeneralConfig {
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
+            pinned_text_color: None,
+            pinned_background_color: None,
+            pinned_highlight_color: None,
+            pinned_selection_background_color: None,
             highlight_color: default_highlight_color(),
             cursor: default_cursor(),
             hard_stop: false,

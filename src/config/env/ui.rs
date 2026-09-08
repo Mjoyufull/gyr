@@ -1,9 +1,31 @@
 //! Environment overrides for shared selector visuals and input behavior.
 
-use super::helpers::{BOOLEAN_EXPECTED, OverrideSource, set_parsed, set_string};
+use super::helpers::{
+    BOOLEAN_EXPECTED, OverrideSource, set_optional_string, set_parsed, set_string,
+};
 use crate::config::{ConfigError, FselConfig};
 
 pub(super) fn apply(cfg: &mut FselConfig, source: &impl OverrideSource) -> Result<(), ConfigError> {
+    set_optional_string(
+        source,
+        "FSEL_PINNED_TEXT_COLOR",
+        &mut cfg.ui.pinned_text_color,
+    );
+    set_optional_string(
+        source,
+        "FSEL_PINNED_BACKGROUND_COLOR",
+        &mut cfg.ui.pinned_background_color,
+    );
+    set_optional_string(
+        source,
+        "FSEL_PINNED_HIGHLIGHT_COLOR",
+        &mut cfg.ui.pinned_highlight_color,
+    );
+    set_optional_string(
+        source,
+        "FSEL_PINNED_SELECTION_BACKGROUND_COLOR",
+        &mut cfg.ui.pinned_selection_background_color,
+    );
     set_string(source, "FSEL_HIGHLIGHT_COLOR", &mut cfg.ui.highlight_color);
     set_string(
         source,
