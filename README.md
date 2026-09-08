@@ -74,6 +74,10 @@ That's it. Type to search, arrow keys to navigate, Enter to launch.
 
 Need install variants, launch methods, or mode-specific examples? See [USAGE.md](./USAGE.md).
 
+Make the layout yours: dock panels around the results, add independent dmenu previews, move them
+interactively, or switch the launcher to an icon grid with distinct pinned-row colors.
+All layouts are opt-in; see [panel and grid options](./USAGE.md#panel-layouts).
+
 
 ## Install
 
