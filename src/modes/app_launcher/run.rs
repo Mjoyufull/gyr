@@ -129,7 +129,7 @@ pub async fn run(cli: Opts) -> Result<()> {
     let backend = CrosstermBackend::new(io::stderr());
     let mut terminal = Terminal::new(backend).wrap_err("Failed to start crossterm terminal")?;
     terminal.hide_cursor().wrap_err("Failed to hide cursor")?;
-    terminal.clear().wrap_err("Failed to clear terminal")?;
+    crate::ui::terminal::clear_fullscreen(&mut terminal).wrap_err("Failed to clear terminal")?;
 
     // The graphics capability probe must run before the input reader, but it can
     // wait for an unanswered terminal response. Show a usable launcher first.

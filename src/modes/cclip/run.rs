@@ -50,7 +50,7 @@ pub async fn run(cli: &Opts) -> Result<()> {
     let backend = CrosstermBackend::new(io::stderr());
     let mut terminal = Terminal::new(backend).wrap_err("Failed to start crossterm terminal")?;
     terminal.hide_cursor().wrap_err("Failed to hide cursor")?;
-    terminal.clear().wrap_err("Failed to clear terminal")?;
+    crate::ui::terminal::clear_fullscreen(&mut terminal).wrap_err("Failed to clear terminal")?;
 
     let mut ui = DmenuUI::new(items, options.wrap_long_lines, options.show_line_numbers);
     if let Some(search) = &cli.search_string {

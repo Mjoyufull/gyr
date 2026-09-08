@@ -1,3 +1,5 @@
+//! Latest-selection preview commands and image replacement.
+
 use crate::ui::{DmenuUI, GraphicsAdapter, ImageManager};
 use eyre::Result;
 use ratatui::Frame;
@@ -16,7 +18,6 @@ pub(super) struct PreviewRuntime {
     command_template: Option<String>,
     expose_query: bool,
     content: PreviewContent,
-    adapter: GraphicsAdapter,
     image_manager: ImageManager,
     active_request: Option<JoinHandle<()>>,
     decode_tx: mpsc::UnboundedSender<()>,
@@ -24,7 +25,6 @@ pub(super) struct PreviewRuntime {
     _decode_worker: std::thread::JoinHandle<()>,
     current_signature: Option<PreviewSignature>,
     generation: u64,
-    previous_image_key: Option<String>,
     result_tx: mpsc::UnboundedSender<PreviewResult>,
     result_rx: mpsc::UnboundedReceiver<PreviewResult>,
 }
@@ -42,15 +42,6 @@ enum PreviewContent {
     Loading,
     Text(String),
     Image(String),
-}
-
-impl PreviewContent {
-    fn image_key(&self) -> Option<&str> {
-        let Self::Image(key) = self else {
-            return None;
-        };
-        Some(key)
-    }
 }
 
 struct DecodeRequest {
@@ -128,7 +119,6 @@ impl PreviewRuntime {
             command_template,
             expose_query,
             content: PreviewContent::Empty,
-            adapter,
             image_manager: ImageManager::new(adapter.picker()),
             active_request: None,
             decode_tx,
@@ -136,7 +126,6 @@ impl PreviewRuntime {
             _decode_worker: decode_worker,
             current_signature: None,
             generation: 0,
-            previous_image_key: None,
             result_tx,
             result_rx,
         }
@@ -194,7 +183,9 @@ impl PreviewRuntime {
             task.abort();
         }
         self.generation = self.generation.wrapping_add(1);
-        self.content = PreviewContent::Loading;
+        if !matches!(self.content, PreviewContent::Image(_)) {
+            self.content = PreviewContent::Loading;
+        }
 
         let generation = self.generation;
         let command = match expand_preview_command(command_template) {
@@ -294,18 +285,6 @@ impl PreviewRuntime {
             }
             Err(error) => self.content = PreviewContent::Text(error),
         }
-    }
-
-    pub(super) fn needs_terminal_clear(&self) -> bool {
-        graphics_state_changed(
-            self.adapter,
-            self.previous_image_key.as_deref(),
-            &self.content,
-        )
-    }
-
-    pub(super) fn finish_draw(&mut self) {
-        self.previous_image_key = self.content.image_key().map(str::to_owned);
     }
 
     pub(super) fn render_image(&mut self, frame: &mut Frame, area: Rect) -> Result<bool> {
@@ -738,14 +717,6 @@ fn should_report_command_failure(output: &CommandOutput) -> bool {
     !output.success && output.stdout.is_empty()
 }
 
-fn graphics_state_changed(
-    adapter: GraphicsAdapter,
-    previous_image_key: Option<&str>,
-    content: &PreviewContent,
-) -> bool {
-    !matches!(adapter, GraphicsAdapter::None) && previous_image_key != content.image_key()
-}
-
 fn signature_query(expose_query: bool, query: &str) -> String {
     if expose_query {
         query.to_string()
@@ -758,11 +729,36 @@ fn signature_query(expose_query: bool, query: &str) -> String {
 mod tests {
     use super::{
         CommandOutput, PreviewContent, append_truncation_notice, expand_preview_command,
-        graphics_state_changed, read_limited_to, run_preview_command,
-        should_report_command_failure, signature_query, truncated_image_message,
+        read_limited_to, run_preview_command, should_report_command_failure, signature_query,
+        truncated_image_message,
     };
-    use crate::ui::GraphicsAdapter;
     use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn pending_replacement_keeps_image_until_current_result_arrives() {
+        let mut preview = super::PreviewRuntime::new(
+            Some("printf replacement".to_string()),
+            crate::ui::GraphicsAdapter::None,
+            true,
+        );
+        preview.content = PreviewContent::Image("previous".to_string());
+        let ui = crate::ui::DmenuUI::new(
+            vec![crate::common::Item::new_simple(
+                "next".into(),
+                "next".into(),
+                1,
+            )],
+            false,
+            false,
+        );
+        preview.request_if_changed(&ui);
+        assert!(matches!(&preview.content, PreviewContent::Image(key) if key == "previous"));
+        let result = preview.next_result().await.expect("command should finish");
+        preview.apply_result(result);
+        assert!(matches!(&preview.content, PreviewContent::Text(text) if text == "replacement"));
+        preview.clear_request();
+        assert!(matches!(preview.content, PreviewContent::Empty));
+    }
 
     #[test]
     fn command_expansion_uses_environment_variables() {
@@ -773,32 +769,6 @@ mod tests {
             command,
             "printf '%s %s %s' \"$FSEL_PREVIEW_ITEM\" \"$FSEL_PREVIEW_QUERY\" \"$FSEL_PREVIEW_ORDINAL\""
         );
-    }
-
-    #[test]
-    fn changing_out_of_band_image_keys_requires_a_clear() {
-        let content = PreviewContent::Image("new-generation".to_string());
-
-        assert!(graphics_state_changed(
-            GraphicsAdapter::Kitty,
-            Some("old-generation"),
-            &content
-        ));
-        assert!(graphics_state_changed(
-            GraphicsAdapter::Sixel,
-            Some("old-generation"),
-            &content
-        ));
-        assert!(!graphics_state_changed(
-            GraphicsAdapter::None,
-            Some("old-generation"),
-            &content
-        ));
-        assert!(!graphics_state_changed(
-            GraphicsAdapter::Kitty,
-            Some("new-generation"),
-            &content
-        ));
     }
 
     #[test]

@@ -27,7 +27,7 @@ pub(super) fn begin_tag_creation(
 ) -> Result<()> {
     image_runtime.clear_inline_image();
     image_runtime.request_buffer_sync();
-    terminal.clear().wrap_err("Failed to clear terminal")?;
+    crate::ui::terminal::clear_fullscreen(terminal).wrap_err("Failed to clear terminal")?;
 
     if let Some(selected_idx) = ui.selected
         && !ui.shown.is_empty()

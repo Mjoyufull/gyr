@@ -1,3 +1,5 @@
+//! Fullscreen terminal lifecycle without competing cursor-response readers.
+
 use crossterm::{
     ExecutableCommand,
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -5,6 +7,16 @@ use crossterm::{
 };
 use eyre::{Result, WrapErr, eyre};
 use std::io;
+
+/// Invalidate the fullscreen buffers without querying the cursor on the input stream.
+/// Ratatui's `clear` preserves the cursor by reading a reply; active event readers
+/// can consume that reply. Fullscreen selectors redraw their cursor explicitly.
+pub(crate) fn clear_fullscreen<B: ratatui::backend::Backend>(
+    terminal: &mut ratatui::Terminal<B>,
+) -> Result<(), B::Error> {
+    let area = terminal.size()?.into();
+    terminal.resize(area)
+}
 
 pub(crate) fn setup_terminal(disable_mouse: bool) -> Result<()> {
     enable_raw_mode().wrap_err("Failed to enable raw mode")?;
@@ -62,3 +74,6 @@ fn record_terminal_error(first_error: &mut Option<eyre::Report>, result: Result<
         *first_error = Some(eyre!(error));
     }
 }
+
+#[cfg(test)]
+mod tests;
