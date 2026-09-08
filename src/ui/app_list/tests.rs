@@ -19,7 +19,7 @@ fn list_icons_reduce_visible_apps_by_configured_row_height() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(40, &cli), 12);
+    assert_eq!(launcher_visible_rows(Rect::new(0, 0, 80, 40), &cli), 12);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn borderless_apps_panel_uses_the_released_rows() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(40, &cli), 13);
+    assert_eq!(launcher_visible_rows(Rect::new(0, 0, 80, 40), &cli), 13);
 }
 
 #[test]
@@ -71,7 +71,10 @@ fn visible_rows_saturates_when_panel_sizes_overflow() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(u16::MAX, &cli), 0);
+    assert_eq!(
+        launcher_visible_rows(Rect::new(0, 0, 80, u16::MAX), &cli),
+        0
+    );
 }
 
 #[test]
@@ -85,7 +88,7 @@ fn middle_title_position_uses_the_actual_apps_pane_height() {
         ..Opts::default()
     };
 
-    assert_eq!(launcher_visible_rows(40, &cli), 6);
+    assert_eq!(launcher_visible_rows(Rect::new(0, 0, 80, 40), &cli), 6);
 }
 
 #[test]
@@ -239,4 +242,36 @@ fn rounded_selection_uses_half_cell_caps() {
     assert_eq!(buffer[(0, 0)].bg, Color::Black);
     assert_eq!(buffer[(1, 0)].bg, Color::Blue);
     assert_eq!(buffer[(4, 0)].symbol(), "▌");
+}
+#[test]
+fn pinned_colors_are_opt_in_and_do_not_change_unpinned_rows() {
+    use ratatui::style::Color;
+    let defaults = crate::cli::Opts::default();
+    for selected in [false, true] {
+        assert_eq!(
+            super::row_style(&defaults, true, selected),
+            super::row_style(&defaults, false, selected)
+        );
+    }
+    let themed = crate::cli::Opts {
+        pinned_text_color: Some(Color::Yellow),
+        pinned_background_color: Some(Color::Blue),
+        pinned_highlight_color: Some(Color::Black),
+        pinned_selection_background_color: Some(Color::Green),
+        ..crate::cli::Opts::default()
+    };
+    for selected in [false, true] {
+        assert_eq!(
+            super::row_style(&themed, false, selected),
+            super::row_style(&defaults, false, selected)
+        );
+    }
+    let (style, background, selected_background) = super::row_style(&themed, true, false);
+    assert_eq!(style.fg, Some(Color::Yellow));
+    assert_eq!(background, Color::Blue);
+    assert_eq!(selected_background, Color::Green);
+    assert_eq!(
+        super::row_style(&themed, true, true).0.fg,
+        Some(Color::Black)
+    );
 }

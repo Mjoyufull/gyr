@@ -17,6 +17,14 @@ pub(crate) fn effective_title_height(total_height: u16, title_panel_height_perce
 }
 
 pub(crate) fn launcher_panel_areas(size: Rect, cli: &crate::cli::Opts) -> (Rect, Rect, Rect) {
+    if cli.panels.enabled() {
+        return cli.panels.split(
+            size,
+            cli.title_panel_height_percent,
+            cli.input_panel_height,
+            cli.title_panel_position.unwrap_or_default(),
+        );
+    }
     let title_height = effective_title_height(size.height, cli.title_panel_height_percent);
     let chunks = match cli.title_panel_position {
         Some(crate::ui::PanelPosition::Bottom) => Layout::default()
@@ -87,7 +95,7 @@ fn split_icon_preview(
 
 pub(crate) fn launcher_preview_icon_area(size: Rect, cli: &crate::cli::Opts) -> Rect {
     let (title_area, _, _) = launcher_panel_areas(size, cli);
-    if effective_title_height(size.height, cli.title_panel_height_percent) == 0 {
+    if title_area.is_empty() {
         return Rect::default();
     }
     let panel_inner = info_block("", cli).inner(title_area);
@@ -150,10 +158,8 @@ impl UI {
     ) -> Result<(bool, bool)> {
         let size = f.area();
         let mut icon_render_failed = false;
-        let title_height = effective_title_height(size.height, cli.title_panel_height_percent);
-        let should_render_border = title_height > 0;
-
         let (title_area, input_area, apps_area) = launcher_panel_areas(size, cli);
+        let should_render_border = !title_area.is_empty();
 
         // Render Title/Info Panel
         if should_render_border {

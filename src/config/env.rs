@@ -59,6 +59,26 @@ mod tests {
     }
 
     #[test]
+    fn pinned_color_environment_overrides_root_configuration() {
+        let mut config: FselConfig =
+            toml::from_str("pinned_text_color = 'Red'").expect("root pinned color should parse");
+        let source = MapSource::new(&[
+            ("FSEL_PINNED_TEXT_COLOR", "Yellow"),
+            ("FSEL_PINNED_BACKGROUND_COLOR", "Blue"),
+            ("FSEL_PINNED_HIGHLIGHT_COLOR", "Black"),
+            ("FSEL_PINNED_SELECTION_BACKGROUND_COLOR", "Green"),
+        ]);
+        apply_overrides(&mut config, &source).expect("pinned overrides should load");
+        assert_eq!(config.ui.pinned_text_color.as_deref(), Some("Yellow"));
+        assert_eq!(config.ui.pinned_background_color.as_deref(), Some("Blue"));
+        assert_eq!(config.ui.pinned_highlight_color.as_deref(), Some("Black"));
+        assert_eq!(
+            config.ui.pinned_selection_background_color.as_deref(),
+            Some("Green")
+        );
+    }
+
+    #[test]
     fn applies_typed_env_overrides_over_loaded_config_values() {
         let mut config: FselConfig = toml::from_str(
             r#"

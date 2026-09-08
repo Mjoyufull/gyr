@@ -1,3 +1,5 @@
+//! CLI parsing, validated options, and command dispatch.
+
 mod color;
 mod error;
 mod from_config;

@@ -1,3 +1,5 @@
+//! Effective command options and mode choices.
+
 mod enums;
 mod opts;
 

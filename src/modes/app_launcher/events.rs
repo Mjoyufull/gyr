@@ -13,11 +13,11 @@ pub(crate) fn handle_event(
     cli: &Opts,
     db: &std::sync::Arc<redb::Database>,
     hidden_store: &HiddenEntryStore,
-    total_height: u16,
+    terminal_area: ratatui::layout::Rect,
 ) {
     match event {
-        Event::Input(key) => handle_key_event(state, key, cli, db, hidden_store, total_height),
-        Event::Mouse(mouse_event) => handle_mouse_event(state, mouse_event, cli, total_height),
+        Event::Input(key) => handle_key_event(state, key, cli, db, hidden_store, terminal_area),
+        Event::Mouse(mouse_event) => handle_mouse_event(state, mouse_event, cli, terminal_area),
         Event::Tick | Event::Render => {}
     }
 }
@@ -28,9 +28,9 @@ fn handle_key_event(
     cli: &Opts,
     db: &std::sync::Arc<redb::Database>,
     hidden_store: &HiddenEntryStore,
-    total_height: u16,
+    terminal_area: ratatui::layout::Rect,
 ) {
-    let max_visible = crate::ui::launcher_visible_rows(total_height, cli);
+    let max_visible = crate::ui::launcher_visible_rows(terminal_area, cli);
     state.clear_status_message();
 
     let msg = if cli.keybinds.matches_exit(key.code, key.modifiers) {
@@ -99,21 +99,39 @@ fn handle_key_event(
         state.should_exit = true;
     }
 
-    crate::core::state::update(state, msg, cli.hard_stop, max_visible);
+    let oriented = if cli.panels.rotation >= 180 {
+        match msg {
+            Message::MoveUp => Message::MoveDown,
+            Message::MoveDown => Message::MoveUp,
+            other => other,
+        }
+    } else {
+        msg
+    };
+    crate::core::state::update(state, oriented, cli.hard_stop, max_visible);
     refresh_info(state, cli);
 }
 
-fn handle_mouse_event(state: &mut State, mouse_event: MouseEvent, cli: &Opts, total_height: u16) {
-    let metrics = list_metrics(total_height, cli);
+fn handle_mouse_event(
+    state: &mut State,
+    mouse_event: MouseEvent,
+    cli: &Opts,
+    terminal_area: ratatui::layout::Rect,
+) {
+    let metrics = list_metrics(terminal_area, cli);
 
     let msg = match mouse_event.kind {
         MouseEventKind::Down(MouseButton::Left) => {
-            if let Some(index) = metrics.app_index_for_row(mouse_event.row, state) {
+            if let Some(index) = metrics
+                .hit(mouse_event.column, mouse_event.row)
+                .map(|index| state.scroll_offset + index)
+                .filter(|index| *index < state.shown.len())
+            {
                 crate::core::state::update(
                     state,
                     Message::SelectIndex(index),
                     cli.hard_stop,
-                    metrics.max_visible,
+                    metrics.capacity(),
                 );
                 Message::Select
             } else {
@@ -121,27 +139,33 @@ fn handle_mouse_event(state: &mut State, mouse_event: MouseEvent, cli: &Opts, to
             }
         }
         MouseEventKind::Moved => metrics
-            .app_index_for_row(mouse_event.row, state)
+            .hit(mouse_event.column, mouse_event.row)
+            .map(|index| state.scroll_offset + index)
+            .filter(|index| *index < state.shown.len())
             .map(Message::SelectIndex)
             .unwrap_or(Message::Tick),
         MouseEventKind::ScrollDown => {
-            if metrics.contains_row(mouse_event.row)
+            if metrics.hit(mouse_event.column, mouse_event.row).is_some()
                 && !state.shown.is_empty()
-                && state.scroll_offset + metrics.max_visible < state.shown.len()
+                && state.scroll_offset + metrics.capacity() < state.shown.len()
             {
                 state.scroll_offset += 1;
-                metrics.snap_selection_to_mouse(state, mouse_event.row);
+                if let Some(index) = metrics.hit(mouse_event.column, mouse_event.row) {
+                    state.selected = Some((state.scroll_offset + index).min(state.shown.len() - 1));
+                }
                 refresh_info(state, cli);
             }
             Message::Tick
         }
         MouseEventKind::ScrollUp => {
-            if metrics.contains_row(mouse_event.row)
+            if metrics.hit(mouse_event.column, mouse_event.row).is_some()
                 && !state.shown.is_empty()
                 && state.scroll_offset > 0
             {
                 state.scroll_offset -= 1;
-                metrics.snap_selection_to_mouse(state, mouse_event.row);
+                if let Some(index) = metrics.hit(mouse_event.column, mouse_event.row) {
+                    state.selected = Some((state.scroll_offset + index).min(state.shown.len() - 1));
+                }
                 refresh_info(state, cli);
             }
             Message::Tick
@@ -154,7 +178,7 @@ fn handle_mouse_event(state: &mut State, mouse_event: MouseEvent, cli: &Opts, to
             crate::core::debug_logger::log_event(&format!("State update via Mouse: {:?}", msg));
         }
 
-        crate::core::state::update(state, msg, cli.hard_stop, metrics.max_visible);
+        crate::core::state::update(state, msg, cli.hard_stop, metrics.capacity());
         refresh_info(state, cli);
     }
 }
@@ -247,72 +271,9 @@ fn refresh_info(state: &mut State, cli: &Opts) {
     );
 }
 
-fn list_metrics(total_height: u16, cli: &Opts) -> ListMetrics {
-    let content = crate::ui::launcher_list_content_area(
-        ratatui::layout::Rect::new(0, 0, 1, total_height),
-        cli,
-    );
-
-    ListMetrics {
-        list_content_start: content.y,
-        max_visible: usize::from(content.height / crate::ui::app_row_height(cli)),
-        row_height: crate::ui::app_row_height(cli),
-    }
-}
-
-struct ListMetrics {
-    list_content_start: u16,
-    max_visible: usize,
-    row_height: u16,
-}
-
-impl ListMetrics {
-    fn contains_row(&self, row: u16) -> bool {
-        row >= self.list_content_start
-            && row
-                < self
-                    .list_content_start
-                    .saturating_add((self.max_visible as u16).saturating_mul(self.row_height))
-    }
-
-    fn app_index_for_row(&self, row: u16, state: &State) -> Option<usize> {
-        if !self.contains_row(row) {
-            return None;
-        }
-
-        let row_in_content = (row - self.list_content_start) / self.row_height;
-        let index = state.scroll_offset + row_in_content as usize;
-        (index < state.shown.len()).then_some(index)
-    }
-
-    fn snap_selection_to_mouse(&self, state: &mut State, row: u16) {
-        let row_in_content = row.saturating_sub(self.list_content_start) / self.row_height;
-        let index = state.scroll_offset + row_in_content as usize;
-        if index < state.shown.len() {
-            state.selected = Some(index);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::list_metrics;
-    use crate::cli::Opts;
-
-    #[test]
-    fn borderless_mouse_metrics_start_on_the_first_visible_row() {
-        let bordered = list_metrics(40, &Opts::default());
-        let borderless = list_metrics(
-            40,
-            &Opts {
-                show_items_border: false,
-                show_panel_titles: false,
-                ..Opts::default()
-            },
-        );
-
-        assert_eq!(bordered.list_content_start, 13);
-        assert_eq!(borderless.list_content_start, 12);
-        assert_eq!(borderless.max_visible, bordered.max_visible + 2);
-    }
+fn list_metrics(
+    terminal_area: ratatui::layout::Rect,
+    cli: &Opts,
+) -> crate::ui::result_layout::ResultLayout {
+    crate::ui::launcher_result_layout(terminal_area, cli)
 }

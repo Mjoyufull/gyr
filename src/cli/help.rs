@@ -4,6 +4,14 @@ pub(crate) fn short_usage(program_name: &str) -> String {
 Usage:
   {program_name} [OPTIONS]
 
+├─ Panel Layout
+│  ├─ --info-position <SIDE>       Dock information: top, right, bottom, left
+│  ├─ --input-position <SIDE>      Dock input relative to results
+│  ├─ --info-size <PERCENT>        Information panel share, 0-90
+│  ├─ --input-size <CELLS>         Input thickness in rows or columns
+│  ├─ --layout-rotation <DEGREES>  Rotate layout: 0, 90, 180, 270
+│  └─ --item-width <COLUMNS>       Horizontal result width (default 24)
+│
 ├─ Core Modes
 │  ├─ -p, --program <NAME>         Launch one app immediately; exact mode refuses near matches
 │  ├─ --dmenu                      Read choices from stdin and print the selection
@@ -68,6 +76,14 @@ pub(crate) fn detailed_usage(program_name: &str) -> String {
 Usage:
   {program_name} [OPTIONS]
 
+├─ Panel Layout
+│  ├─ --info-position <SIDE>       Dock information: top, right, bottom, left
+│  ├─ --input-position <SIDE>      Dock input relative to results
+│  ├─ --info-size <PERCENT>        Information panel share, 0-90
+│  ├─ --input-size <CELLS>         Input thickness in rows or columns
+│  ├─ --layout-rotation <DEGREES>  Rotate layout: 0, 90, 180, 270
+│  └─ --item-width <COLUMNS>       Horizontal result width (default 24)
+│
 ├─ Core Modes
 │  ├─ -p, --program <NAME>         Launch one app immediately; exact mode requires an exact hit
 │  ├─ --cclip                      Browse clipboard history and copy the selected item

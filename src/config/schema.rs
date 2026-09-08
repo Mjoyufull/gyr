@@ -8,6 +8,8 @@ use crate::ui::{HorizontalPosition, InputPanelStyle, PanelPosition};
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FselConfig {
+    #[serde(default)]
+    pub panels: crate::ui::PanelSettings,
     #[serde(flatten)]
     pub general: GeneralConfig,
     #[serde(flatten)]
@@ -96,6 +98,14 @@ pub struct GeneralConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UiConfig {
+    #[serde(default)]
+    pub pinned_text_color: Option<String>,
+    #[serde(default)]
+    pub pinned_background_color: Option<String>,
+    #[serde(default)]
+    pub pinned_highlight_color: Option<String>,
+    #[serde(default)]
+    pub pinned_selection_background_color: Option<String>,
     #[serde(default = "super::defaults::default_highlight_color")]
     pub highlight_color: String,
     #[serde(default = "super::defaults::default_cursor")]
